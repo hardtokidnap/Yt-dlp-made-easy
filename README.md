@@ -36,7 +36,7 @@ built with **Python, CustomTkinter and a pinch of o3**.
 ### Run from source
 
 ```bash
-git clone https://github.com/<your-user>/yt-dlp-made-easy.git
+git clone https://github.com/hardtokidnap/yt-dlp-made-easy.git
 cd yt-dlp-made-easy
 python -m pip install -r requirements.txt   # Python 3.12 recommended
 python main.py
