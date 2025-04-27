@@ -28,7 +28,7 @@ built with **Python, CustomTkinter and a pinch of o3**.
 
 ### Pre-built executable (Windows)
 
-1. Download the latest archive from **Releases** (`yt-dlp-made-easy-x.y.z.zip`).
+1. Download the latest archive from **[Releases](https://github.com/hardtokidnap/Yt-dlp-made-easy/releases)** (`yt-dlp-made-easy-x.y.z.zip`).
 2. Unzip anywhere.
 3. Run `yt-dlp-made-easy.exe`.  
    If yt-dlp needs an update, click **Update yt-dlp** inside the app.
