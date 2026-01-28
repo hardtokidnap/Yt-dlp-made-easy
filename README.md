@@ -1,46 +1,84 @@
 # YT-DLP Made Easy
 
-# App is being rebuilt in GO with Wails frontend. WIP.
+> **Status:** 
+WIP. This project is currently being rebuilt from the ground up using **Go** and **Wails**.
+
+A modern, lightweight GUI wrapper for `yt-dlp` designed to provide a native experience on Windows 11.
+
+> ## [!NOTE]
+> ### This is a hobby project. I do not really care if it doesn't work for you. Sorry not sorry. Issues most likely won't be handled.
 
 
 
-A modern, one-file GUI wrapper around [yt-dlp](https://github.com/yt-dlp/yt-dlp)  
-built with **Python, CustomTkinter and a pinch of o3**.
+## About the project
 
-![screenshot](screenshot.png)
+**The original Python/CustomTkinter application is being deprecated** in favor of a robust Go backend coupled with a Wails frontend. This transition reduces the application size to a single \~8MB binary, eliminates external dependencies, and provides better performance through Go's native concurrency.
+___
 
----
+## Key features
 
+The new architecture introduces several improvements over the previous version:
 
-## Features
+* **Better SponsorBlock integration:** automatically skip sponsored segments in videos
 
-- Batch download: paste multiple URLs
-- Quality selector: Best / 1080p / 720p / 480p
-- Audio-only mode (MP3)
-- Subtitle language picker
-- SponsorBlock removal
-- Rate-limit and proxy fields
-- Custom output template (`%(title)s.%(ext)s`, etc.)
-- Clipboard watcher: auto-pastes copied YouTube links
-- Desktop notification on completion
-- Real-time log tab
-- In-app **Update yt-dlp** button
+* **Build switching:** seamless toggling between stable and nightly `yt-dlp` builds to access the latest fixes
 
----
+* **Concurrent downloads:** configurable queue allowing multiple simultaneous downloads
 
-## Installation
+* **Process control:** ability to pause and resume downloads without connection drops
 
-### Pre-built executable (Windows)
+* **Advanced authentication:** support for browser cookies and PO tokens for restricted content
 
-1. Download the latest archive from **[Releases](https://github.com/hardtokidnap/Yt-dlp-made-easy/releases)** (`yt-dlp-made-easy-x.y.z.zip`).
-2. Unzip anywhere.
-3. Run `yt-dlp-made-easy.exe`.  
-   If yt-dlp needs an update, click **Update yt-dlp** inside the app.
+* **Visual queue:** real-time progress bars with detailed status information
 
-### Run from source
+* **History management:** search, filter, and re-download previously grabbed content
 
-```bash
-git clone https://github.com/hardtokidnap/yt-dlp-made-easy.git
-cd yt-dlp-made-easy
-python -m pip install -r requirements.txt   # Python 3.12 recommended
-python main.py
+* **Native integration:** supports clipboard monitoring, drag-and-drop, and desktop notifications
+
+* **JS External Runtime swap:** ability to swap between `Deno` (Default), `node.js`, `npm`, `QuickJS`, `QuickJS-ng`, and `Bun`
+
+* **Custom args:** support for custom args with autocomplete (If i can do it without adding a million libraries)
+
+More to come.
+
+___
+
+## Tech stack
+
+* **Backend:** Go (handling process management and file I/O)
+
+* **Frontend:** HTML5, JavaScript, Tailwind CSS
+
+* **Build tool:** Wails (using system WebView2)
+
+## Development
+
+To work on this project, you will need Go 1.21+ and the Wails CLI installed. The frontend is configured to use NPM, but can be adapted for other runtimes as needed.
+
+> [!NOTE]
+> The app won't run. It's still in it's infancy. I'm just adding it to have it here.
+### Setup
+
+1. Install Wails: `go install github.com/wailsapp/wails/v2/cmd/wails@latest`
+
+2. Clone the repository
+
+3. Initialize dependencies: `go mod tidy`
+
+4. Install frontend dependencies: `cd frontend && npm install`
+
+### Commands
+
+* **Run in dev mode:** `wails dev` (enables hot reload)
+
+* **Build for Windows:** `wails build -platform windows/amd64`
+
+* **Production build:** `wails build -platform windows/amd64 -ldflags="-s -w"`
+
+## Structure
+
+* `app.go`: Main application logic and frontend bindings
+
+* `frontend/`: Contains the HTML, Tailwind CSS, and JavaScript logic
+
+* `internal/`: Core packages for the downloader, queue, and settings management
