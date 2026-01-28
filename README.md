@@ -5,8 +5,8 @@ WIP. This project is currently being rebuilt from the ground up using **Go** and
 
 A modern, lightweight GUI wrapper for `yt-dlp` designed to provide a native experience on Windows 11.
 
-> ## [!NOTE]
-> ### This is a hobby project. I do not really care if it doesn't work for you. Sorry not sorry. Issues most likely won't be handled.
+> [!WARNING]
+ This is a hobby project. I do not really care if it doesn't work for you. Sorry not sorry. Issues most likely won't be handled.
 
 
 
@@ -53,7 +53,7 @@ ___
 
 ## Development
 
-To work on this project, you will need Go 1.21+ and the Wails CLI installed. The frontend is configured to use NPM, but can be adapted for other runtimes as needed.
+To work on this project, you will need Go 1.21+ and the Wails CLI installed.
 
 > [!NOTE]
 > The app won't run. It's still in it's infancy. I'm just adding it to have it here.
