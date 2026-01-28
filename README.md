@@ -1,5 +1,9 @@
 # YT-DLP Made Easy
 
+# App is being rebuilt in GO with Wails frontend. WIP.
+
+
+
 A modern, one-file GUI wrapper around [yt-dlp](https://github.com/yt-dlp/yt-dlp)  
 built with **Python, CustomTkinter and a pinch of o3**.
 
