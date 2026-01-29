@@ -6,7 +6,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// Status represents download status
 type Status string
 
 const (
@@ -18,30 +17,32 @@ const (
 	StatusError       Status = "error"
 )
 
-// Item represents a single download
+// Item tracks state for a single download, including progress from yt-dlp
+// and classified errors with suggested fixes.
 type Item struct {
-	ID            string    `json:"id"`
-	URL           string    `json:"url"`
-	Title         string    `json:"title"`
-	Status        Status    `json:"status"`
-	Progress      float64   `json:"progress"` // 0-100
-	Speed         string    `json:"speed"`
-	ETA           string    `json:"eta"`
-	FilePath      string    `json:"file_path"`
-	FileSize      int64     `json:"file_size"`
-	Error         string    `json:"error"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID            string     `json:"id"`
+	URL           string     `json:"url"`
+	Title         string     `json:"title"`
+	Status        Status     `json:"status"`
+	Progress      float64    `json:"progress"` // 0-100
+	Speed         string     `json:"speed"`
+	ETA           string     `json:"eta"`
+	FilePath      string     `json:"file_path"`
+	FileSize      int64      `json:"file_size"`
+	Error         string     `json:"error"`
+	ErrorType     ErrorType  `json:"error_type"`              // Classified error type
+	Suggestions   []Solution `json:"suggestions,omitempty"`   // Suggested fixes
+	CreatedAt     time.Time  `json:"created_at"`
 	StartedAt     *time.Time `json:"started_at,omitempty"`
 	CompletedAt   *time.Time `json:"completed_at,omitempty"`
-	IsAudioOnly   bool      `json:"is_audio_only"`
-	Quality       string    `json:"quality"`
-	Format        string    `json:"format"`
-	CurrentItem   int       `json:"current_item"` // For playlists
-	TotalItems    int       `json:"total_items"`
-	ProcessPID    int       `json:"-"` // Not serialized
+	IsAudioOnly   bool       `json:"is_audio_only"`
+	Quality       string     `json:"quality"`
+	Format        string     `json:"format"`
+	CurrentItem   int        `json:"current_item"` // For playlists
+	TotalItems    int        `json:"total_items"`
+	ProcessPID    int        `json:"-"` // Not serialized
 }
 
-// NewItem creates a new download item
 func NewItem(url string, isAudioOnly bool, quality, format string) *Item {
 	return &Item{
 		ID:          uuid.New().String(),
@@ -57,7 +58,6 @@ func NewItem(url string, isAudioOnly bool, quality, format string) *Item {
 	}
 }
 
-// SetStatus updates the status and timestamps
 func (i *Item) SetStatus(status Status) {
 	i.Status = status
 	now := time.Now()
@@ -73,33 +73,30 @@ func (i *Item) SetStatus(status Status) {
 	}
 }
 
-// SetError sets error status and message
+// SetError classifies the error and populates fix suggestions.
 func (i *Item) SetError(err error) {
 	i.Status = StatusError
 	i.Error = err.Error()
+	classified := ClassifyError(i.Error)
+	i.ErrorType = classified.Type
+	i.Suggestions = classified.Suggestions
 }
 
-// CanPause returns true if item can be paused
-func (i *Item) CanPause() bool {
-	return i.Status == StatusDownloading
+// SetErrorFromString classifies the error string and populates fix suggestions.
+func (i *Item) SetErrorFromString(errMsg string) {
+	i.Status = StatusError
+	i.Error = errMsg
+	classified := ClassifyError(errMsg)
+	i.ErrorType = classified.Type
+	i.Suggestions = classified.Suggestions
 }
 
-// CanResume returns true if item can be resumed
-func (i *Item) CanResume() bool {
-	return i.Status == StatusPaused || i.Status == StatusStopped
-}
+func (i *Item) CanPause() bool  { return i.Status == StatusDownloading }
+func (i *Item) CanResume() bool { return i.Status == StatusPaused || i.Status == StatusStopped }
+func (i *Item) CanStop() bool   { return i.Status == StatusDownloading || i.Status == StatusPaused }
+func (i *Item) IsActive() bool  { return i.Status == StatusDownloading || i.Status == StatusPaused }
 
-// CanStop returns true if item can be stopped
-func (i *Item) CanStop() bool {
-	return i.Status == StatusDownloading || i.Status == StatusPaused
-}
-
-// IsActive returns true if download is active
-func (i *Item) IsActive() bool {
-	return i.Status == StatusDownloading || i.Status == StatusPaused
-}
-
-// DisplayTitle returns title or truncated URL
+// DisplayTitle returns video title, falling back to truncated URL if unknown.
 func (i *Item) DisplayTitle() string {
 	if i.Title != "" {
 		return i.Title
