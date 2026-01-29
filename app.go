@@ -125,13 +125,8 @@ func (a *App) ClearCompletedDownloads() int { return a.queue.ClearCompleted() }
 func (a *App) GetSettings() *config.Settings { return a.settings }
 
 // SaveSettings persists settings and propagates changes to running components.
-// Takes a pointer to avoid copying the embedded mutex (go vet warning).
 func (a *App) SaveSettings(s *config.Settings) error {
-	a.settings.General = s.General
-	a.settings.Download = s.Download
-	a.settings.Network = s.Network
-	a.settings.Auth = s.Auth
-	a.settings.Advanced = s.Advanced
+	a.settings = s
 
 	a.queue.UpdateMaxConcurrent(s.General.MaxConcurrentDownloads)
 	a.updater.UseNightly = s.Advanced.UseNightly
