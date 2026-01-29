@@ -10,51 +10,53 @@ import (
 
 // Settings holds all application configuration
 type Settings struct {
-	SchemaVersion int              `json:"schema_version"`
-	General       GeneralSettings  `json:"general"`
-	Download      DownloadSettings `json:"download"`
-	Network       NetworkSettings  `json:"network"`
-	Auth          AuthSettings     `json:"auth"`
-	Advanced      AdvancedSettings `json:"advanced"`
+	SchemaVersion int              `json:"SchemaVersion"`
+	General       GeneralSettings  `json:"General"`
+	Download      DownloadSettings `json:"Download"`
+	Network       NetworkSettings  `json:"Network"`
+	Auth          AuthSettings     `json:"Auth"`
+	Advanced      AdvancedSettings `json:"Advanced"`
 	mu            sync.RWMutex     `json:"-"`
 }
 
 type GeneralSettings struct {
-	SaveFolder      string `json:"save_folder"`
-	Theme           string `json:"theme"` // system, light, dark
-	MaxConcurrent   int    `json:"max_concurrent"`
-	ClipboardMonitor bool   `json:"clipboard_monitor"`
-	Notifications   bool   `json:"notifications"`
-	CheckUpdates    bool   `json:"check_updates"`
+	SaveFolder               string `json:"SaveFolder"`
+	Theme                    string `json:"Theme"` // system, light, dark
+	MaxConcurrentDownloads   int    `json:"MaxConcurrentDownloads"`
+	ClipboardMonitoring      bool   `json:"ClipboardMonitoring"`
+	NotificationsEnabled     bool   `json:"NotificationsEnabled"`
+	CheckUpdatesOnStart      bool   `json:"CheckUpdatesOnStart"`
 }
 
 type DownloadSettings struct {
-	Quality         string `json:"quality"`
-	Format          string `json:"format"`
-	AudioFormat     string `json:"audio_format"`
-	AudioQuality    string `json:"audio_quality"`
-	EmbedThumbnail  bool   `json:"embed_thumbnail"`
-	EmbedMetadata   bool   `json:"embed_metadata"`
-	EmbedChapters   bool   `json:"embed_chapters"`
-	Sponsorblock    bool   `json:"sponsorblock"`
+	Quality        string `json:"Quality"`
+	Format         string `json:"Format"`
+	AudioFormat    string `json:"AudioFormat"`
+	AudioQuality   string `json:"AudioQuality"`
+	EmbedThumbnail bool   `json:"EmbedThumbnail"`
+	EmbedMetadata  bool   `json:"EmbedMetadata"`
+	EmbedChapters  bool   `json:"EmbedChapters"`
+	Sponsorblock   bool   `json:"Sponsorblock"`
 }
 
 type NetworkSettings struct {
-	RateLimit string `json:"rate_limit"`
-	Proxy     string `json:"proxy"`
-	Retries   int    `json:"retries"`
+	RateLimit string `json:"RateLimit"`
+	Proxy     string `json:"Proxy"`
+	Retries   int    `json:"Retries"`
 }
 
 type AuthSettings struct {
-	CookiesBrowser string `json:"cookies_browser"`
-	CookiesFile    string `json:"cookies_file"`
-	POToken        string `json:"po_token"`
+	CookiesBrowser string `json:"CookiesBrowser"`
+	CookiesFile    string `json:"CookiesFile"`
+	POToken        string `json:"POToken"`
+	PlayerClient   string `json:"PlayerClient"` // web, mweb, web_creator, ios, android
 }
 
 type AdvancedSettings struct {
-	UseNightly     bool   `json:"use_nightly"`
-	OutputTemplate string `json:"output_template"`
-	ExtraArgs      string `json:"extra_args"`
+	UseNightly     bool   `json:"UseNightly"`
+	OutputTemplate string `json:"OutputTemplate"`
+	ExtraArgs      string `json:"ExtraArgs"`
+	JSRuntime      string `json:"JSRuntime"` // auto, deno, node, bun, or path
 }
 
 // DefaultSettings returns a new Settings instance with default values
@@ -62,12 +64,12 @@ func DefaultSettings() *Settings {
 	return &Settings{
 		SchemaVersion: 1,
 		General: GeneralSettings{
-			SaveFolder:      util.DefaultDownloadFolder,
-			Theme:           "system",
-			MaxConcurrent:   3,
-			ClipboardMonitor: true,
-			Notifications:   true,
-			CheckUpdates:    true,
+			SaveFolder:             util.DefaultDownloadFolder,
+			Theme:                  "system",
+			MaxConcurrentDownloads: 3,
+			ClipboardMonitoring:    true,
+			NotificationsEnabled:   true,
+			CheckUpdatesOnStart:    true,
 		},
 		Download: DownloadSettings{
 			Quality:        "best",
@@ -88,11 +90,13 @@ func DefaultSettings() *Settings {
 			CookiesBrowser: "none",
 			CookiesFile:    "",
 			POToken:        "",
+			PlayerClient:   "default", // default, mweb, web_creator, ios, android
 		},
 		Advanced: AdvancedSettings{
 			UseNightly:     false,
 			OutputTemplate: "%(title)s.%(ext)s",
 			ExtraArgs:      "",
+			JSRuntime:      "auto", // auto-detect, or deno/node/bun
 		},
 	}
 }
@@ -161,8 +165,8 @@ func (s *Settings) mergeDefaults() {
 	if s.General.Theme == "" {
 		s.General.Theme = defaults.General.Theme
 	}
-	if s.General.MaxConcurrent == 0 {
-		s.General.MaxConcurrent = defaults.General.MaxConcurrent
+	if s.General.MaxConcurrentDownloads == 0 {
+		s.General.MaxConcurrentDownloads = defaults.General.MaxConcurrentDownloads
 	}
 	if s.Download.Quality == "" {
 		s.Download.Quality = defaults.Download.Quality

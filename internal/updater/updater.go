@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"ytdlp-easy/internal/util"
@@ -52,7 +53,7 @@ func (u *Updater) GetCurrentVersion() string {
 		return ""
 	}
 
-	return string(output[:len(output)-1]) // Remove trailing newline
+	return strings.TrimSpace(string(output))
 }
 
 // GetLatestVersion fetches the latest version from GitHub API
@@ -113,8 +114,11 @@ func (u *Updater) Download() error {
 
 	u.notify("Downloading yt-dlp...")
 
-	// Create temp file
+	// Create temp file with unique name
 	tempPath := util.YtDlpPath + ".tmp"
+
+	// Clean up any stale temp file
+	os.Remove(tempPath)
 
 	// Download
 	client := &http.Client{Timeout: 5 * time.Minute}
@@ -133,12 +137,12 @@ func (u *Updater) Download() error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
 
-	// Copy with progress
+	// Copy with progress (throttled to only update on % change)
 	totalSize := resp.ContentLength
 	written := int64(0)
 	buf := make([]byte, 32*1024)
+	lastPercent := -1
 
 	for {
 		n, err := resp.Body.Read(buf)
@@ -147,25 +151,50 @@ func (u *Updater) Download() error {
 			written += int64(n)
 
 			if totalSize > 0 {
-				percent := float64(written) / float64(totalSize) * 100
-				u.notify(fmt.Sprintf("Downloading... %.0f%%", percent))
+				percent := int(float64(written) / float64(totalSize) * 100)
+				if percent != lastPercent {
+					u.notify(fmt.Sprintf("Downloading... %d%%", percent))
+					lastPercent = percent
+				}
 			}
 		}
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
+			out.Close()
+			os.Remove(tempPath)
 			return err
 		}
 	}
 
-	// Replace old file
-	if _, err := os.Stat(util.YtDlpPath); err == nil {
-		os.Remove(util.YtDlpPath)
+	// Close file before rename
+	out.Close()
+
+	// Try to replace old file with retries (handle file lock)
+	var renameErr error
+	for i := 0; i < 5; i++ {
+		// Remove old file if exists
+		if _, err := os.Stat(util.YtDlpPath); err == nil {
+			if err := os.Remove(util.YtDlpPath); err != nil {
+				u.notify(fmt.Sprintf("Waiting for file lock... attempt %d", i+1))
+				time.Sleep(time.Second)
+				continue
+			}
+		}
+
+		// Rename temp to final
+		renameErr = os.Rename(tempPath, util.YtDlpPath)
+		if renameErr == nil {
+			break
+		}
+		u.notify(fmt.Sprintf("Waiting for file lock... attempt %d", i+1))
+		time.Sleep(time.Second)
 	}
 
-	if err := os.Rename(tempPath, util.YtDlpPath); err != nil {
-		return err
+	if renameErr != nil {
+		os.Remove(tempPath)
+		return fmt.Errorf("failed to install yt-dlp (file locked): %w", renameErr)
 	}
 
 	u.notify("Download complete!")
@@ -202,6 +231,10 @@ func (u *Updater) Update() error {
 
 // EnsureInstalled makes sure yt-dlp is available
 func (u *Updater) EnsureInstalled() error {
+	// Clean up any stale temp file from previous failed attempts
+	tempPath := util.YtDlpPath + ".tmp"
+	os.Remove(tempPath)
+
 	if u.IsInstalled() {
 		return nil
 	}

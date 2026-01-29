@@ -7,22 +7,22 @@ import (
 	"ytdlp-easy/internal/config"
 )
 
-// Queue manages concurrent downloads
+// Queue coordinates concurrent downloads using a semaphore pattern.
+// Downloads exceeding MaxConcurrentDownloads block until a slot opens.
 type Queue struct {
 	items       map[string]*Item
 	downloaders map[string]*Downloader
 	settings    *config.Settings
 	mu          sync.RWMutex
-	sem         chan struct{}
+	sem         chan struct{} // Bounded semaphore for concurrency control
 	ctx         context.Context
 	cancel      context.CancelFunc
 
-	// Callbacks for UI updates
-	OnItemUpdate func(*Item)
+	OnItemUpdate  func(*Item)
 	OnQueueUpdate func()
+	OnLog         func(itemID, line string)
 }
 
-// NewQueue creates a new download queue
 func NewQueue(settings *config.Settings) *Queue {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -30,7 +30,7 @@ func NewQueue(settings *config.Settings) *Queue {
 		items:       make(map[string]*Item),
 		downloaders: make(map[string]*Downloader),
 		settings:    settings,
-		sem:         make(chan struct{}, settings.General.MaxConcurrent),
+		sem:         make(chan struct{}, settings.General.MaxConcurrentDownloads),
 		ctx:         ctx,
 		cancel:      cancel,
 	}
@@ -38,7 +38,6 @@ func NewQueue(settings *config.Settings) *Queue {
 	return q
 }
 
-// Add adds a new download to the queue
 func (q *Queue) Add(url string, isAudioOnly bool, quality, format string) *Item {
 	item := NewItem(url, isAudioOnly, quality, format)
 
@@ -46,32 +45,33 @@ func (q *Queue) Add(url string, isAudioOnly bool, quality, format string) *Item 
 	q.items[item.ID] = item
 	q.mu.Unlock()
 
-	// Start processing
 	go q.processItem(item)
-
 	q.notifyQueueUpdate()
 	return item
 }
 
-// processItem handles downloading a single item
 func (q *Queue) processItem(item *Item) {
-	// Acquire semaphore (blocks if at max concurrent)
+	// Block until a concurrency slot is available
 	select {
 	case q.sem <- struct{}{}:
-		// Got slot
 	case <-q.ctx.Done():
+		item.SetStatus(StatusStopped)
+		q.notifyItemUpdate(item)
 		return
 	}
-	defer func() { <-q.sem }() // Release slot when done
+	defer func() { <-q.sem }()
 
-	// Create downloader
 	d := NewDownloader(item, q.settings)
+	if q.OnLog != nil {
+		d.OnLog = func(line string) {
+			q.OnLog(item.ID, line)
+		}
+	}
 
 	q.mu.Lock()
 	q.downloaders[item.ID] = d
 	q.mu.Unlock()
 
-	// Start download
 	if err := d.Start(q.ctx); err != nil {
 		item.SetError(err)
 		q.notifyItemUpdate(item)
@@ -80,10 +80,10 @@ func (q *Queue) processItem(item *Item) {
 
 	q.notifyItemUpdate(item)
 
-	// Wait for completion
-	d.Wait()
+	if err := d.Wait(); err != nil {
+		q.notifyItemUpdate(item) // Error already set by Wait()
+	}
 
-	// Cleanup
 	q.mu.Lock()
 	delete(q.downloaders, item.ID)
 	q.mu.Unlock()
@@ -92,7 +92,6 @@ func (q *Queue) processItem(item *Item) {
 	q.notifyQueueUpdate()
 }
 
-// Pause pauses a download
 func (q *Queue) Pause(id string) error {
 	q.mu.RLock()
 	d, ok := q.downloaders[id]
@@ -109,14 +108,12 @@ func (q *Queue) Pause(id string) error {
 	return err
 }
 
-// Resume resumes a paused download
 func (q *Queue) Resume(id string) error {
 	q.mu.RLock()
 	d, ok := q.downloaders[id]
 	item := q.items[id]
 	q.mu.RUnlock()
 
-	// If we have an active downloader, resume it
 	if ok && d != nil {
 		err := d.Resume()
 		if err == nil {
@@ -125,7 +122,7 @@ func (q *Queue) Resume(id string) error {
 		return err
 	}
 
-	// If item is stopped, restart the download
+	// Stopped items need a fresh download attempt
 	if item != nil && item.Status == StatusStopped {
 		item.Status = StatusPending
 		go q.processItem(item)
@@ -135,7 +132,6 @@ func (q *Queue) Resume(id string) error {
 	return nil
 }
 
-// Stop stops a download
 func (q *Queue) Stop(id string) error {
 	q.mu.RLock()
 	d, ok := q.downloaders[id]
@@ -152,29 +148,24 @@ func (q *Queue) Stop(id string) error {
 	return err
 }
 
-// Remove removes an item from the queue
 func (q *Queue) Remove(id string) {
 	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	// Stop if active
 	if d, ok := q.downloaders[id]; ok {
 		d.Stop()
 		delete(q.downloaders, id)
 	}
-
 	delete(q.items, id)
+	q.mu.Unlock() // Release before callback to avoid deadlock
+
 	q.notifyQueueUpdate()
 }
 
-// GetItem returns an item by ID
 func (q *Queue) GetItem(id string) *Item {
 	q.mu.RLock()
 	defer q.mu.RUnlock()
 	return q.items[id]
 }
 
-// GetAll returns all items
 func (q *Queue) GetAll() []*Item {
 	q.mu.RLock()
 	defer q.mu.RUnlock()
@@ -186,7 +177,6 @@ func (q *Queue) GetAll() []*Item {
 	return items
 }
 
-// GetActive returns active downloads
 func (q *Queue) GetActive() []*Item {
 	q.mu.RLock()
 	defer q.mu.RUnlock()
@@ -200,7 +190,6 @@ func (q *Queue) GetActive() []*Item {
 	return items
 }
 
-// PauseAll pauses all active downloads
 func (q *Queue) PauseAll() int {
 	q.mu.RLock()
 	downloaders := make([]*Downloader, 0)
@@ -218,7 +207,6 @@ func (q *Queue) PauseAll() int {
 	return count
 }
 
-// ResumeAll resumes all paused downloads
 func (q *Queue) ResumeAll() int {
 	q.mu.RLock()
 	downloaders := make([]*Downloader, 0)
@@ -236,7 +224,6 @@ func (q *Queue) ResumeAll() int {
 	return count
 }
 
-// StopAll stops all downloads
 func (q *Queue) StopAll() int {
 	q.mu.RLock()
 	downloaders := make([]*Downloader, 0)
@@ -254,10 +241,8 @@ func (q *Queue) StopAll() int {
 	return count
 }
 
-// ClearCompleted removes completed, stopped, and errored items
 func (q *Queue) ClearCompleted() int {
 	q.mu.Lock()
-	defer q.mu.Unlock()
 
 	count := 0
 	for id, item := range q.items {
@@ -267,19 +252,20 @@ func (q *Queue) ClearCompleted() int {
 		}
 	}
 
+	q.mu.Unlock() // Release before callback to avoid deadlock
+
 	if count > 0 {
 		q.notifyQueueUpdate()
 	}
 	return count
 }
 
-// UpdateMaxConcurrent changes the concurrency limit
+// UpdateMaxConcurrent replaces the semaphore with a new capacity.
+// Active downloads continue; the new limit applies to future downloads.
 func (q *Queue) UpdateMaxConcurrent(max int) {
-	// Create new semaphore with new size
 	q.sem = make(chan struct{}, max)
 }
 
-// Shutdown stops all downloads and cleans up
 func (q *Queue) Shutdown() {
 	q.cancel()
 	q.StopAll()

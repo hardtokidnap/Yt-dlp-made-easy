@@ -12,7 +12,6 @@ import (
 	"ytdlp-easy/internal/util"
 )
 
-// Entry represents a single history entry
 type Entry struct {
 	ID          string    `json:"id"`
 	URL         string    `json:"url"`
@@ -27,13 +26,12 @@ type Entry struct {
 	Format      string    `json:"format"`
 }
 
-// History manages download history with JSON Lines storage
+// History persists download records to a JSON Lines file for crash-safe appends.
 type History struct {
 	entries []Entry
 	mu      sync.RWMutex
 }
 
-// NewHistory creates a new history manager and loads existing entries
 func NewHistory() (*History, error) {
 	h := &History{
 		entries: make([]Entry, 0),
@@ -49,7 +47,6 @@ func NewHistory() (*History, error) {
 	return h, nil
 }
 
-// load reads all entries from the JSONL file
 func (h *History) load() error {
 	file, err := os.Open(util.HistoryFile)
 	if err != nil {
@@ -71,7 +68,7 @@ func (h *History) load() error {
 
 		var entry Entry
 		if err := json.Unmarshal([]byte(line), &entry); err != nil {
-			continue // Skip malformed lines
+			continue // Skip malformed lines gracefully
 		}
 		h.entries = append(h.entries, entry)
 	}
@@ -79,20 +76,17 @@ func (h *History) load() error {
 	return scanner.Err()
 }
 
-// Add appends a new entry to history (crash-safe append)
+// Add appends atomically - even if the app crashes mid-write, previous entries survive.
 func (h *History) Add(entry Entry) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	// Set date if not set
 	if entry.Date.IsZero() {
 		entry.Date = time.Now()
 	}
 
-	// Append to in-memory list
 	h.entries = append(h.entries, entry)
 
-	// Append to file (crash-safe)
 	file, err := os.OpenFile(util.HistoryFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
@@ -108,20 +102,17 @@ func (h *History) Add(entry Entry) error {
 	return err
 }
 
-// GetAll returns all history entries (newest first)
 func (h *History) GetAll() []Entry {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	// Return in reverse order (newest first)
 	result := make([]Entry, len(h.entries))
 	for i, entry := range h.entries {
-		result[len(h.entries)-1-i] = entry
+		result[len(h.entries)-1-i] = entry // Newest first
 	}
 	return result
 }
 
-// Search filters history by query and status
 func (h *History) Search(query, status string) []Entry {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -129,16 +120,13 @@ func (h *History) Search(query, status string) []Entry {
 	queryLower := strings.ToLower(query)
 	var results []Entry
 
-	// Iterate in reverse for newest first
 	for i := len(h.entries) - 1; i >= 0; i-- {
 		entry := h.entries[i]
 
-		// Filter by status
 		if status != "" && status != "all" && entry.Status != status {
 			continue
 		}
 
-		// Filter by query
 		if queryLower != "" {
 			titleLower := strings.ToLower(entry.Title)
 			urlLower := strings.ToLower(entry.URL)
@@ -153,7 +141,6 @@ func (h *History) Search(query, status string) []Entry {
 	return results
 }
 
-// GetByID returns a specific entry
 func (h *History) GetByID(id string) *Entry {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -166,18 +153,14 @@ func (h *History) GetByID(id string) *Entry {
 	return nil
 }
 
-// Clear removes all history
 func (h *History) Clear() error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	h.entries = make([]Entry, 0)
-
-	// Truncate the file
 	return os.Truncate(util.HistoryFile, 0)
 }
 
-// ClearOld removes entries older than days
 func (h *History) ClearOld(days int) (int, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -194,7 +177,6 @@ func (h *History) ClearOld(days int) (int, error) {
 	removed := len(h.entries) - len(newEntries)
 	h.entries = newEntries
 
-	// Rewrite file
 	if err := h.rewriteFile(); err != nil {
 		return 0, err
 	}
@@ -202,7 +184,6 @@ func (h *History) ClearOld(days int) (int, error) {
 	return removed, nil
 }
 
-// Remove removes a specific entry
 func (h *History) Remove(id string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -218,7 +199,7 @@ func (h *History) Remove(id string) error {
 	return h.rewriteFile()
 }
 
-// rewriteFile rewrites the entire history file (called after deletions)
+// rewriteFile rebuilds the file after deletions. Unlike Add(), this is not atomic.
 func (h *History) rewriteFile() error {
 	file, err := os.Create(util.HistoryFile)
 	if err != nil {
@@ -237,7 +218,6 @@ func (h *History) rewriteFile() error {
 	return nil
 }
 
-// ExportCSV exports history to a CSV file
 func (h *History) ExportCSV(filepath string) error {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -251,10 +231,8 @@ func (h *History) ExportCSV(filepath string) error {
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
 
-	// Header
 	writer.Write([]string{"Title", "URL", "Status", "Date", "File Path", "File Size", "Format"})
 
-	// Data
 	for i := len(h.entries) - 1; i >= 0; i-- {
 		entry := h.entries[i]
 		writer.Write([]string{
@@ -271,14 +249,12 @@ func (h *History) ExportCSV(filepath string) error {
 	return nil
 }
 
-// Count returns the number of entries
 func (h *History) Count() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return len(h.entries)
 }
 
-// Stats returns history statistics
 func (h *History) Stats() map[string]interface{} {
 	h.mu.RLock()
 	defer h.mu.RUnlock()

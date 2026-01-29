@@ -23,16 +23,17 @@ var (
 	ntResumeProcess    = ntdll.NewProc("NtResumeProcess")
 )
 
-// Downloader manages a single yt-dlp process
+// Downloader wraps a yt-dlp process with pause/resume support via Windows NT APIs.
+// Each download gets its own Downloader instance managed by the Queue.
 type Downloader struct {
 	item     *Item
 	settings *config.Settings
 	cmd      *exec.Cmd
 	cancel   context.CancelFunc
 	logFile  *os.File
+	OnLog    func(line string)
 }
 
-// NewDownloader creates a new downloader
 func NewDownloader(item *Item, settings *config.Settings) *Downloader {
 	return &Downloader{
 		item:     item,
@@ -43,27 +44,33 @@ func NewDownloader(item *Item, settings *config.Settings) *Downloader {
 func (d *Downloader) Start(ctx context.Context) error {
 	args := BuildArgs(d.item.URL, d.settings, d.item.IsAudioOnly)
 
-	// Create cancellable context
 	ctx, cancel := context.WithCancel(ctx)
 	d.cancel = cancel
 
-	// Create command
 	d.cmd = exec.CommandContext(ctx, args[0], args[1:]...)
 
-	// Open log file
+	// Prevent console window flash on Windows
+	d.cmd.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: 0x08000000,
+	}
+
 	logFile, err := os.OpenFile(util.LogFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
 	d.logFile = logFile
 
-	// Get stdout pipe
 	stdout, err := d.cmd.StdoutPipe()
 	if err != nil {
 		return err
 	}
 
-	// Start command
+	stderr, err := d.cmd.StderrPipe()
+	if err != nil {
+		return err
+	}
+
 	if err := d.cmd.Start(); err != nil {
 		return err
 	}
@@ -71,19 +78,36 @@ func (d *Downloader) Start(ctx context.Context) error {
 	d.item.ProcessPID = d.cmd.Process.Pid
 	d.item.SetStatus(StatusDownloading)
 
-	// Parse output in goroutine
+	// Stream stdout to log file, frontend, and progress parser
 	go func() {
 		defer stdout.Close()
-		defer d.logFile.Close()
-
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
 			line := scanner.Text()
+			if d.logFile != nil {
+				d.logFile.WriteString(line + "\n")
+			}
+			d.emitLog(line)
+			d.parseOutput(line)
+		}
+	}()
 
-			// Write to log
-			d.logFile.WriteString(line + "\n")
+	// Stream stderr - yt-dlp writes errors here
+	go func() {
+		defer stderr.Close()
+		defer func() {
+			if d.logFile != nil {
+				d.logFile.Close()
+			}
+		}()
 
-			// Parse progress
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if d.logFile != nil {
+				d.logFile.WriteString("[stderr] " + line + "\n")
+			}
+			d.emitLog(line)
 			d.parseOutput(line)
 		}
 	}()
@@ -91,7 +115,13 @@ func (d *Downloader) Start(ctx context.Context) error {
 	return nil
 }
 
-// Wait waits for the download to complete
+func (d *Downloader) emitLog(line string) {
+	if d.OnLog != nil {
+		d.OnLog(line)
+	}
+}
+
+// Wait blocks until yt-dlp exits, then updates item status based on exit code.
 func (d *Downloader) Wait() error {
 	if d.cmd == nil {
 		return fmt.Errorf("no process running")
@@ -102,7 +132,19 @@ func (d *Downloader) Wait() error {
 	if err == nil {
 		d.item.SetStatus(StatusCompleted)
 	} else if d.item.Status != StatusStopped {
-		d.item.SetError(err)
+		// Preserve yt-dlp error message if we captured one, otherwise use Go error
+		if d.item.Error == "" {
+			d.item.SetErrorFromString(err.Error())
+		} else {
+			// Error was already captured from output, just ensure status is set
+			d.item.Status = StatusError
+			// Re-classify if not already done
+			if d.item.ErrorType == "" || d.item.ErrorType == ErrorUnknown {
+				classified := ClassifyError(d.item.Error)
+				d.item.ErrorType = classified.Type
+				d.item.Suggestions = classified.Suggestions
+			}
+		}
 	}
 
 	return err
@@ -162,7 +204,6 @@ func (d *Downloader) Resume() error {
 	return nil
 }
 
-// Stop stops the download
 func (d *Downloader) Stop() error {
 	if d.cancel != nil {
 		d.cancel()
@@ -172,12 +213,12 @@ func (d *Downloader) Stop() error {
 	return nil
 }
 
-// parseOutput parses yt-dlp output for progress info
+// parseOutput extracts progress, filenames, and errors from yt-dlp's stdout/stderr.
+// yt-dlp uses a specific format: [download] 50.0% of 100.00MiB at 5.00MiB/s ETA 00:10
 func (d *Downloader) parseOutput(line string) {
 	line = strings.TrimSpace(line)
 
-	// Parse download progress
-	// Format: [download]  50.0% of 100.00MiB at 5.00MiB/s ETA 00:10
+	// Progress: [download] 50.0% of 100.00MiB at 5.00MiB/s ETA 00:10
 	progressRe := regexp.MustCompile(`\[download\]\s+(\d+\.?\d*)%\s+of\s+~?\s*(\S+)\s+at\s+(\S+)\s+ETA\s+(\S+)`)
 	if matches := progressRe.FindStringSubmatch(line); matches != nil {
 		if percent, err := strconv.ParseFloat(matches[1], 64); err == nil {
@@ -188,13 +229,10 @@ func (d *Downloader) parseOutput(line string) {
 		return
 	}
 
-	// Parse destination filename
-	// [download] Destination: filename.mp4
+	// Destination: [download] Destination: filename.mp4
 	destRe := regexp.MustCompile(`\[download\]\s+Destination:\s+(.+)`)
 	if matches := destRe.FindStringSubmatch(line); matches != nil {
 		d.item.FilePath = strings.TrimSpace(matches[1])
-
-		// Extract title from filename if not set
 		if d.item.Title == "" {
 			title := strings.TrimSuffix(matches[1], ".mp4")
 			title = strings.TrimSuffix(title, ".webm")
@@ -204,8 +242,7 @@ func (d *Downloader) parseOutput(line string) {
 		return
 	}
 
-	// Parse playlist progress
-	// [download] Downloading item 1 of 10
+	// Playlist: [download] Downloading item 1 of 10
 	playlistRe := regexp.MustCompile(`\[download\]\s+Downloading\s+item\s+(\d+)\s+of\s+(\d+)`)
 	if matches := playlistRe.FindStringSubmatch(line); matches != nil {
 		if current, err := strconv.Atoi(matches[1]); err == nil {
@@ -217,12 +254,32 @@ func (d *Downloader) parseOutput(line string) {
 		return
 	}
 
-	// Parse errors
-	if strings.Contains(line, "ERROR:") {
-		d.item.Error = line
+	// Errors come in various formats - capture and classify them
+	if strings.Contains(line, "ERROR:") || strings.Contains(line, "error:") {
+		var errMsg string
+		if idx := strings.Index(line, "ERROR:"); idx != -1 {
+			errMsg = strings.TrimSpace(line[idx:])
+		} else if idx := strings.Index(line, "error:"); idx != -1 {
+			errMsg = strings.TrimSpace(line[idx:])
+		} else {
+			errMsg = line
+		}
+		d.item.SetErrorFromString(errMsg)
+		return
 	}
 
-	// Already downloaded
+	// Some failures don't have ERROR: prefix
+	if strings.Contains(line, "Unable to") {
+		d.item.SetErrorFromString(line)
+		return
+	}
+
+	// HTTP errors sometimes appear without ERROR: prefix
+	if strings.Contains(line, "HTTP Error") || strings.Contains(line, "403") || strings.Contains(line, "429") {
+		d.item.SetErrorFromString(line)
+		return
+	}
+
 	if strings.Contains(line, "has already been downloaded") {
 		d.item.Progress = 100
 	}
