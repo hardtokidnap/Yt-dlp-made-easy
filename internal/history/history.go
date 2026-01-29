@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -284,12 +285,12 @@ func (h *History) Stats() map[string]interface{} {
 func formatBytes(b int64) string {
 	const unit = 1024
 	if b < unit {
-		return string(rune(b)) + " B"
+		return fmt.Sprintf("%d B", b)
 	}
 	div, exp := int64(unit), 0
 	for n := b / unit; n >= unit; n /= unit {
 		div *= unit
 		exp++
 	}
-	return string(rune(b/div)) + " " + "KMGTPE"[exp:exp+1] + "iB"
+	return fmt.Sprintf("%.1f %siB", float64(b)/float64(div), string("KMGTPE"[exp]))
 }

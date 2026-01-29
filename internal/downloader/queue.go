@@ -263,6 +263,8 @@ func (q *Queue) ClearCompleted() int {
 // UpdateMaxConcurrent replaces the semaphore with a new capacity.
 // Active downloads continue; the new limit applies to future downloads.
 func (q *Queue) UpdateMaxConcurrent(max int) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	q.sem = make(chan struct{}, max)
 }
 

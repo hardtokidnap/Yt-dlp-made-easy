@@ -1,7 +1,7 @@
 build/bin
 node_modules
 frontend/dist
-src/
+/src/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

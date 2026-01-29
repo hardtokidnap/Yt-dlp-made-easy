@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply bg-gray-900 text-white;
+  }
+
+  body {
+    @apply m-0 font-sans;
+  }
+}
+
+@layer components {
+  .tab-button {
+    @apply px-6 py-3 text-sm font-medium transition-colors duration-200 border-b-2;
+  }
+
+  .tab-button-active {
+    @apply border-blue-500 text-blue-400;
+  }
+
+  .tab-button-inactive {
+    @apply border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-600;
+  }
+
+  .input-field {
+    @apply w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors;
+  }
+
+  .btn-primary {
+    @apply px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 font-medium disabled:bg-gray-700 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors duration-200 font-medium disabled:bg-gray-800 disabled:cursor-not-allowed;
+  }
+
+  .btn-danger {
+    @apply px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors duration-200 font-medium;
+  }
+
+  .card {
+    @apply bg-gray-800 rounded-lg p-4 border border-gray-700;
+  }
+
+  .select-field {
+    @apply px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors cursor-pointer;
+  }
+
+  .progress-bar {
+    @apply h-2 bg-gray-700 rounded-full overflow-hidden;
+  }
+
+  .progress-bar-fill {
+    @apply h-full bg-blue-600 transition-all duration-300;
+  }
+
+  .log-output {
+    @apply bg-black text-green-400 p-4 rounded-lg font-mono text-sm h-full overflow-y-auto;
+  }
+}
