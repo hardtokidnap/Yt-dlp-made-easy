@@ -2,8 +2,10 @@ package downloader
 
 import (
 	"fmt"
+	"strings"
 
 	"ytdlp-easy/internal/config"
+	"ytdlp-easy/internal/jsruntime"
 	"ytdlp-easy/internal/util"
 )
 
@@ -59,14 +61,40 @@ func BuildArgs(url string, settings *config.Settings, isAudioOnly bool) []string
 		args = append(args, "--fragment-retries", fmt.Sprintf("%d", settings.Network.Retries))
 	}
 
-	if settings.Auth.CookiesBrowser != "" && settings.Auth.CookiesBrowser != "none" {
-		args = append(args, "--cookies-from-browser", settings.Auth.CookiesBrowser)
-	}
+	// Cookies file takes priority - it's explicit and doesn't require browser to be closed
 	if settings.Auth.CookiesFile != "" {
 		args = append(args, "--cookies", settings.Auth.CookiesFile)
+	} else if settings.Auth.CookiesBrowser != "" && settings.Auth.CookiesBrowser != "none" {
+		args = append(args, "--cookies-from-browser", settings.Auth.CookiesBrowser)
 	}
+
+	// JavaScript runtime for YouTube extraction
+	if runtimeArgs := jsruntime.GetYtDlpRuntimeArgs(settings.Advanced.JSRuntime); runtimeArgs != nil {
+		args = append(args, runtimeArgs...)
+	}
+
+	// Build YouTube extractor args for player client and PO token
+	var ytExtractorArgs []string
+
+	// Player client selection (helps with 403 errors)
+	playerClient := settings.Auth.PlayerClient
+	if playerClient != "" && playerClient != "default" {
+		ytExtractorArgs = append(ytExtractorArgs, fmt.Sprintf("player-client=%s", playerClient))
+	}
+
+	// PO Token support (format: CLIENT.gvs+TOKEN or just TOKEN for auto-detect)
 	if settings.Auth.POToken != "" {
-		args = append(args, "--extractor-args", fmt.Sprintf("youtube:player-client=web;po_token=%s", settings.Auth.POToken))
+		// If token already has format (contains + or .), use as-is
+		// Otherwise, format it for the selected client
+		token := settings.Auth.POToken
+		if playerClient != "" && playerClient != "default" && !strings.Contains(token, "+") && !strings.Contains(token, ".") {
+			token = fmt.Sprintf("%s.gvs+%s", playerClient, token)
+		}
+		ytExtractorArgs = append(ytExtractorArgs, fmt.Sprintf("po_token=%s", token))
+	}
+
+	if len(ytExtractorArgs) > 0 {
+		args = append(args, "--extractor-args", "youtube:"+strings.Join(ytExtractorArgs, ";"))
 	}
 
 	if settings.Advanced.ExtraArgs != "" {
@@ -125,3 +153,4 @@ func splitArgs(s string) []string {
 	}
 	return args
 }
+
