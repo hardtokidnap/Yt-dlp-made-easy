@@ -2,7 +2,8 @@
 
 A modern, lightweight GUI wrapper for [yt-dlp](https://github.com/yt-dlp/yt-dlp) built with Go and Wails. Single ~8MB binary, no external dependencies.
 
-> **Note:** This is a hobby project. Issues may not be addressed.
+> [!NOTE] 
+> This is a hobby project. Issues may not be addressed.
 
 ---
 
