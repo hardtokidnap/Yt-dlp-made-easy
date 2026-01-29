@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"ytdlp-easy/internal/util"
 )
@@ -200,8 +201,9 @@ func (d *Downloader) DownloadDeno() error {
 
 	d.notify("Downloading Deno...")
 
-	// Download the zip file
-	resp, err := http.Get(url)
+	// Download the zip file with timeout
+	client := &http.Client{Timeout: 5 * time.Minute}
+	resp, err := client.Get(url)
 	if err != nil {
 		return fmt.Errorf("failed to download Deno: %w", err)
 	}
@@ -282,7 +284,8 @@ func extractDenoFromZip(zipPath, destPath string) error {
 }
 
 func GetDenoLatestVersion() (string, error) {
-	resp, err := http.Get("https://api.github.com/repos/denoland/deno/releases/latest")
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Get("https://api.github.com/repos/denoland/deno/releases/latest")
 	if err != nil {
 		return "", err
 	}

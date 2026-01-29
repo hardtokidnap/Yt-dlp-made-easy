@@ -63,15 +63,18 @@ func (d *Downloader) Start(ctx context.Context) error {
 
 	stdout, err := d.cmd.StdoutPipe()
 	if err != nil {
+		d.logFile.Close()
 		return err
 	}
 
 	stderr, err := d.cmd.StderrPipe()
 	if err != nil {
+		d.logFile.Close()
 		return err
 	}
 
 	if err := d.cmd.Start(); err != nil {
+		d.logFile.Close()
 		return err
 	}
 
@@ -136,14 +139,8 @@ func (d *Downloader) Wait() error {
 		if d.item.Error == "" {
 			d.item.SetErrorFromString(err.Error())
 		} else {
-			// Error was already captured from output, just ensure status is set
-			d.item.Status = StatusError
-			// Re-classify if not already done
-			if d.item.ErrorType == "" || d.item.ErrorType == ErrorUnknown {
-				classified := ClassifyError(d.item.Error)
-				d.item.ErrorType = classified.Type
-				d.item.Suggestions = classified.Suggestions
-			}
+			// Error was already captured from output - re-classify to ensure suggestions
+			d.item.SetErrorFromString(d.item.Error)
 		}
 	}
 
