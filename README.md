@@ -138,8 +138,8 @@ If you see "Could not copy cookie database":
 ---
 
 ## Security Notice
-[!NOTE]
-Using cookies or authentication may put your YouTube account at risk. Consider using a throwaway account for downloading if you are doing higher quantities like playlist.
+> [!NOTE]
+> Using cookies or authentication may put your YouTube account at risk. Consider using a throwaway account for downloading if you are doing higher quantities like playlist.
 
 ---
 
