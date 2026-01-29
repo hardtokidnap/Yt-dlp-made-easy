@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os/exec"
 	goruntime "runtime"
 
@@ -10,11 +11,13 @@ import (
 	"ytdlp-easy/internal/config"
 	"ytdlp-easy/internal/downloader"
 	"ytdlp-easy/internal/history"
+	"ytdlp-easy/internal/jsruntime"
 	"ytdlp-easy/internal/updater"
 	"ytdlp-easy/internal/util"
 )
 
-// App struct
+// App is the Wails bridge between Go backend and the frontend.
+// All exported methods become callable from JavaScript.
 type App struct {
 	ctx      context.Context
 	settings *config.Settings
@@ -23,12 +26,10 @@ type App struct {
 	updater  *updater.Updater
 }
 
-// NewApp creates a new App application struct
 func NewApp() *App {
 	return &App{}
 }
 
-// startup is called when the app starts
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 
@@ -46,6 +47,12 @@ func (a *App) startup(ctx context.Context) {
 	}
 	a.queue.OnQueueUpdate = func() {
 		wailsruntime.EventsEmit(a.ctx, "queue:update", a.GetQueueStatus())
+	}
+	a.queue.OnLog = func(itemID, line string) {
+		wailsruntime.EventsEmit(a.ctx, "download:log", map[string]string{
+			"id":   itemID,
+			"line": line,
+		})
 	}
 
 	// Load history
@@ -68,7 +75,7 @@ func (a *App) startup(ctx context.Context) {
 		}
 
 		// Check for updates if enabled
-		if settings.General.CheckUpdates {
+		if settings.General.CheckUpdatesOnStart {
 			if info, err := a.updater.CheckForUpdate(); err == nil && info.UpdateAvailable {
 				wailsruntime.EventsEmit(a.ctx, "update:available", info)
 			}
@@ -76,134 +83,93 @@ func (a *App) startup(ctx context.Context) {
 	}()
 }
 
-// shutdown is called when the app closes
 func (a *App) shutdown(ctx context.Context) {
 	if a.queue != nil {
 		a.queue.Shutdown()
 	}
 }
 
-// ========== Download Operations ==========
-
-// DownloadOptions specifies download configuration
+// DownloadOptions matches the frontend's download request format.
 type DownloadOptions struct {
 	IsAudioOnly bool   `json:"is_audio_only"`
 	Quality     string `json:"quality"`
 	Format      string `json:"format"`
 }
 
-// AddDownload adds a URL to the download queue
-func (a *App) AddDownload(url string, opts DownloadOptions) string {
+func (a *App) AddDownload(url string, opts DownloadOptions) (string, error) {
+	wailsruntime.LogDebug(a.ctx, "Adding download: "+url)
+
+	// Ensure yt-dlp is installed
+	if !a.updater.IsInstalled() {
+		return "", fmt.Errorf("yt-dlp is not installed yet, please wait for installation to complete")
+	}
+
 	item := a.queue.Add(url, opts.IsAudioOnly, opts.Quality, opts.Format)
-	return item.ID
+
+	// Emit initial state
+	wailsruntime.EventsEmit(a.ctx, "download:update", item)
+
+	return item.ID, nil
 }
 
-// PauseDownload pauses a download
-func (a *App) PauseDownload(id string) error {
-	return a.queue.Pause(id)
-}
+func (a *App) PauseDownload(id string) error  { return a.queue.Pause(id) }
+func (a *App) ResumeDownload(id string) error { return a.queue.Resume(id) }
+func (a *App) StopDownload(id string) error   { return a.queue.Stop(id) }
+func (a *App) RemoveDownload(id string)       { a.queue.Remove(id) }
+func (a *App) GetQueueStatus() []*downloader.Item { return a.queue.GetAll() }
+func (a *App) PauseAllDownloads() int  { return a.queue.PauseAll() }
+func (a *App) ResumeAllDownloads() int { return a.queue.ResumeAll() }
+func (a *App) StopAllDownloads() int   { return a.queue.StopAll() }
+func (a *App) ClearCompletedDownloads() int { return a.queue.ClearCompleted() }
 
-// ResumeDownload resumes a download
-func (a *App) ResumeDownload(id string) error {
-	return a.queue.Resume(id)
-}
+func (a *App) GetSettings() *config.Settings { return a.settings }
 
-// StopDownload stops a download
-func (a *App) StopDownload(id string) error {
-	return a.queue.Stop(id)
-}
-
-// RemoveDownload removes a download from queue
-func (a *App) RemoveDownload(id string) {
-	a.queue.Remove(id)
-}
-
-// GetQueueStatus returns all queue items
-func (a *App) GetQueueStatus() []*downloader.Item {
-	return a.queue.GetAll()
-}
-
-// PauseAllDownloads pauses all active downloads
-func (a *App) PauseAllDownloads() int {
-	return a.queue.PauseAll()
-}
-
-// ResumeAllDownloads resumes all paused downloads
-func (a *App) ResumeAllDownloads() int {
-	return a.queue.ResumeAll()
-}
-
-// StopAllDownloads stops all downloads
-func (a *App) StopAllDownloads() int {
-	return a.queue.StopAll()
-}
-
-// ClearCompletedDownloads clears finished downloads
-func (a *App) ClearCompletedDownloads() int {
-	return a.queue.ClearCompleted()
-}
-
-// ========== Settings Operations ==========
-
-// GetSettings returns current settings
-func (a *App) GetSettings() *config.Settings {
-	return a.settings
-}
-
-// SaveSettings saves settings
-func (a *App) SaveSettings(s config.Settings) error {
+// SaveSettings persists settings and propagates changes to running components.
+// Takes a pointer to avoid copying the embedded mutex (go vet warning).
+func (a *App) SaveSettings(s *config.Settings) error {
 	a.settings.General = s.General
 	a.settings.Download = s.Download
 	a.settings.Network = s.Network
 	a.settings.Auth = s.Auth
 	a.settings.Advanced = s.Advanced
 
-	// Update queue concurrency if changed
-	a.queue.UpdateMaxConcurrent(s.General.MaxConcurrent)
-
-	// Update updater nightly setting
+	a.queue.UpdateMaxConcurrent(s.General.MaxConcurrentDownloads)
 	a.updater.UseNightly = s.Advanced.UseNightly
 
 	return a.settings.Save()
 }
 
-// BrowseFolder opens a folder picker dialog
+// BrowseFolder opens a native folder picker and persists the selection.
 func (a *App) BrowseFolder() string {
 	folder, err := wailsruntime.OpenDirectoryDialog(a.ctx, wailsruntime.OpenDialogOptions{
 		Title:            "Select Download Folder",
 		DefaultDirectory: a.settings.General.SaveFolder,
 	})
-	if err != nil {
-		return ""
+	if err != nil || folder == "" {
+		return a.settings.General.SaveFolder
 	}
+
+	// Update and save settings
+	a.settings.General.SaveFolder = folder
+	if err := a.settings.Save(); err != nil {
+		wailsruntime.LogError(a.ctx, "Failed to save settings: "+err.Error())
+	}
+
 	return folder
 }
 
-// ========== History Operations ==========
-
-// HistoryFilter specifies search criteria
 type HistoryFilter struct {
 	Query  string `json:"query"`
 	Status string `json:"status"`
 }
 
-// GetHistory returns filtered history
 func (a *App) GetHistory(filter HistoryFilter) []history.Entry {
 	return a.history.Search(filter.Query, filter.Status)
 }
 
-// ClearHistory clears all history
-func (a *App) ClearHistory() error {
-	return a.history.Clear()
-}
+func (a *App) ClearHistory() error           { return a.history.Clear() }
+func (a *App) ClearOldHistory(days int) int  { count, _ := a.history.ClearOld(days); return count }
 
-// ClearOldHistory clears history older than days
-func (a *App) ClearOldHistory(days int) int {
-	count, _ := a.history.ClearOld(days)
-	return count
-}
-
-// ExportHistory exports history to CSV
 func (a *App) ExportHistory() (string, error) {
 	filepath, err := wailsruntime.SaveFileDialog(a.ctx, wailsruntime.SaveDialogOptions{
 		Title:           "Export History",
@@ -219,7 +185,6 @@ func (a *App) ExportHistory() (string, error) {
 	return filepath, a.history.ExportCSV(filepath)
 }
 
-// RedownloadFromHistory starts a re-download from history
 func (a *App) RedownloadFromHistory(id string) string {
 	entry := a.history.GetByID(id)
 	if entry == nil {
@@ -230,14 +195,9 @@ func (a *App) RedownloadFromHistory(id string) string {
 	return item.ID
 }
 
-// GetHistoryStats returns history statistics
-func (a *App) GetHistoryStats() map[string]interface{} {
-	return a.history.Stats()
-}
+func (a *App) GetHistoryStats() map[string]interface{} { return a.history.Stats() }
 
-// ========== File Operations ==========
-
-// OpenFile opens a file with the default application
+// OpenFile launches the OS default handler for a file path.
 func (a *App) OpenFile(path string) error {
 	var cmd *exec.Cmd
 	switch goruntime.GOOS {
@@ -251,7 +211,6 @@ func (a *App) OpenFile(path string) error {
 	return cmd.Start()
 }
 
-// OpenURL opens a URL in the default browser
 func (a *App) OpenURL(url string) error {
 	var cmd *exec.Cmd
 	switch goruntime.GOOS {
@@ -265,7 +224,6 @@ func (a *App) OpenURL(url string) error {
 	return cmd.Start()
 }
 
-// OpenFolder opens a folder in file explorer
 func (a *App) OpenFolder(path string) error {
 	var cmd *exec.Cmd
 	switch goruntime.GOOS {
@@ -279,26 +237,10 @@ func (a *App) OpenFolder(path string) error {
 	return cmd.Start()
 }
 
-// ========== Updater Operations ==========
+func (a *App) CheckForUpdates() (*updater.UpdateInfo, error) { return a.updater.CheckForUpdate() }
+func (a *App) UpdateYtDlp() error                            { return a.updater.Update() }
+func (a *App) GetYtDlpVersion() string                       { return a.updater.GetCurrentVersion() }
 
-// CheckForUpdates checks for yt-dlp updates
-func (a *App) CheckForUpdates() (*updater.UpdateInfo, error) {
-	return a.updater.CheckForUpdate()
-}
-
-// UpdateYtDlp updates yt-dlp
-func (a *App) UpdateYtDlp() error {
-	return a.updater.Update()
-}
-
-// GetYtDlpVersion returns current yt-dlp version
-func (a *App) GetYtDlpVersion() string {
-	return a.updater.GetCurrentVersion()
-}
-
-// ========== Clipboard Operations ==========
-
-// GetClipboard returns clipboard contents
 func (a *App) GetClipboard() string {
 	text, err := wailsruntime.ClipboardGetText(a.ctx)
 	if err != nil {
@@ -307,9 +249,17 @@ func (a *App) GetClipboard() string {
 	return text
 }
 
-// ========== Utility ==========
+func (a *App) GetJSRuntimeInfo() jsruntime.RuntimeInfo { return jsruntime.DetectRuntimes() }
 
-// GetAppInfo returns application info
+func (a *App) DownloadDeno() error {
+	dl := &jsruntime.Downloader{
+		OnProgress: func(msg string) {
+			wailsruntime.EventsEmit(a.ctx, "jsruntime:progress", msg)
+		},
+	}
+	return dl.DownloadDeno()
+}
+
 func (a *App) GetAppInfo() map[string]string {
 	return map[string]string{
 		"app_name":    "YT-DLP Made Easy",
