@@ -1,42 +1,159 @@
 # YT-DLP Made Easy
 
-A modern, one-file GUI wrapper around [yt-dlp](https://github.com/yt-dlp/yt-dlp)  
-built with **Python, CustomTkinter and a pinch of o3**.
+A modern, lightweight GUI wrapper for [yt-dlp](https://github.com/yt-dlp/yt-dlp) built with Go and Wails. Single ~8MB binary, no external dependencies.
 
-![screenshot](screenshot.png)
+> [!NOTE] 
+> This is a hobby project. Issues may not be addressed.
 
 ---
 
-
 ## Features
 
-- Batch download: paste multiple URLs
-- Quality selector: Best / 1080p / 720p / 480p
-- Audio-only mode (MP3)
-- Subtitle language picker
-- SponsorBlock removal
-- Rate-limit and proxy fields
-- Custom output template (`%(title)s.%(ext)s`, etc.)
-- Clipboard watcher: auto-pastes copied YouTube links
-- Desktop notification on completion
-- Real-time log tab
-- In-app **Update yt-dlp** button
+### Download Management
+- **Concurrent downloads** with configurable queue size
+- **Pause and resume** downloads without losing progress
+- **Real-time progress** with speed and ETA display
+- **Playlist support** with individual item tracking
+- **Quality selection** from 360p to 4K
+- **Audio extraction** with format and quality options
 
+### Smart Error Handling
+- **Automatic error classification** detects 403 blocks, rate limits, age restrictions, and more
+- **Guided recovery** with actionable fix suggestions
+- **One-click fixes** that apply settings and retry automatically
+
+### Authentication
+- **Browser cookie import** from Chrome, Firefox, Edge, Brave
+- **Cookies file support** for explicit authentication
+- **PO Token support** for age-restricted content
+- **Player client switching** (web, mweb, ios, android) to bypass blocks
+
+### Advanced Options
+- **SponsorBlock integration** to skip sponsored segments
+- **Stable/Nightly builds** with automatic updates
+- **JavaScript runtime management** (Deno, Node.js, Bun) with bundled Deno download
+- **Custom yt-dlp arguments** with autocomplete suggestions
+- **Clipboard monitoring** for automatic URL detection
+- **Download history** with search, filter, and re-download
+> [!NOTE]
+> Download history is currently broken while I work on a solution that can use either sqlite or a simple csv due to bloating possibilites and JSON corruption for users with high usage.
 ---
 
 ## Installation
 
-### Pre-built executable (Windows)
+Download the latest release from the [Releases](https://github.com/hardtokidnap/yt-dlp-easy/releases) page.
 
-1. Download the latest archive from **[Releases](https://github.com/hardtokidnap/Yt-dlp-made-easy/releases)** (`yt-dlp-made-easy-x.y.z.zip`).
-2. Unzip anywhere.
-3. Run `yt-dlp-made-easy.exe`.  
-   If yt-dlp needs an update, click **Update yt-dlp** inside the app.
+The application will automatically download yt-dlp on first launch.
 
-### Run from source
+---
+
+## Building from Source
+
+### Prerequisites
+
+- Go 1.21+
+- [Wails CLI](https://wails.io/docs/gettingstarted/installation)
+- Node.js 18+
+
+### Setup
 
 ```bash
-git clone https://github.com/hardtokidnap/yt-dlp-made-easy.git
-cd yt-dlp-made-easy
-python -m pip install -r requirements.txt   # Python 3.12 recommended
-python main.py
+# Install Wails
+go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+# Clone repository
+git clone https://github.com/hardtokidnap/yt-dlp-easy.git
+cd yt-dlp-easy
+
+# Install dependencies
+go mod tidy
+cd frontend && npm install && cd ..
+```
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `wails dev` | Run in development mode with hot reload |
+| `wails build` | Build production binary |
+| `wails build -ldflags="-s -w"` | Build optimized binary (smaller size) |
+
+---
+
+## Project Structure
+
+```
+.
+├── app.go                 # Wails application entry and frontend bindings
+├── main.go                # Application bootstrap
+├── frontend/              # HTML, CSS, JavaScript UI
+│   └── src/
+│       ├── main.js        # Application logic
+│       └── style.css      # Tailwind styles
+└── internal/
+    ├── config/            # Settings management
+    ├── downloader/        # Queue, item, args, error handling
+    ├── history/           # Download history tracking
+    ├── jsruntime/         # JavaScript runtime detection and management
+    ├── updater/           # yt-dlp version management
+    └── util/              # Shared utilities and paths
+```
+
+---
+
+## Configuration
+
+Settings are stored in:
+- **Windows:** `%APPDATA%\ytdlp-easy\settings.json`
+- **macOS:** `~/Library/Application Support/ytdlp-easy/settings.json`
+- **Linux:** `~/.config/ytdlp-easy/settings.json`
+
+---
+
+## Troubleshooting
+
+### HTTP 403 Forbidden
+
+YouTube frequently blocks downloads. Try these fixes in order:
+
+1. **Switch to Mobile Web player** in Settings > Authentication > Player Client
+2. **Add browser cookies** from a logged-in session
+3. **Use the nightly build** which has the latest fixes
+4. **Add a PO Token** for persistent access
+
+### Age-Restricted Videos
+
+Age-restricted videos require authentication:
+
+1. **PO Token** (recommended) - Follow the in-app guide or see [yt-dlp PO Token Guide](https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide)
+2. **Browser cookies** from a logged-in YouTube account
+
+### Cookie Database Errors
+
+If you see "Could not copy cookie database":
+
+1. **Close your browser completely** before downloading
+2. **Use a cookies.txt file** instead of browser extraction (works with browser open) see [How do I pass cookies to yt-dlp? - Second to last paragraph](https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp)
+
+---
+
+## Security Notice
+> [!NOTE]
+> Using cookies or authentication may put your YouTube account at risk. Consider using a throwaway account for downloading if you are doing higher quantities like playlist.
+
+---
+
+## Tech Stack
+
+| Component | Technology |
+|-----------|------------|
+| Backend | Go 1.21+ |
+| Frontend | HTML5, JavaScript, Tailwind CSS |
+| Framework | [Wails v2](https://wails.io) |
+| Downloader | [yt-dlp](https://github.com/yt-dlp/yt-dlp) |
+
+---
+
+## License
+
+MIT License. See [LICENSE](LICENSE) for details.
