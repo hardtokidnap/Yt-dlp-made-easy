@@ -3,10 +3,25 @@
 <head>
     <meta charset="UTF-8"/>
     <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-    <title>ytdlp-easy</title>
+    <title>YT-DLP Made Easy</title>
 </head>
-<body>
-<div id="app"></div>
+<body class="bg-gray-900 text-white">
+<div id="app" class="h-screen flex flex-col">
+    <!-- Header -->
+    <div class="bg-gray-800 border-b border-gray-700 px-6 py-4">
+        <h1 class="text-2xl font-bold">YT-DLP Made Easy</h1>
+    </div>
+
+    <!-- Tabs -->
+    <div class="bg-gray-800 border-b border-gray-700">
+        <div id="tabs" class="flex space-x-1 px-6"></div>
+    </div>
+
+    <!-- Tab Content -->
+    <div class="flex-1 overflow-hidden">
+        <div id="tab-content" class="h-full overflow-y-auto p-6"></div>
+    </div>
+</div>
 <script src="./src/main.js" type="module"></script>
 </body>
 </html>

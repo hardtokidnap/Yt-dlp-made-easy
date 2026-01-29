@@ -36,6 +36,10 @@ func main() {
 			WebviewIsTransparent: false,
 			WindowIsTranslucent:  false,
 			DisableWindowIcon:    false,
+			IsZoomControlEnabled: true,
+		},
+		Debug: options.Debug{
+			OpenInspectorOnStartup: false,
 		},
 	})
 
