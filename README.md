@@ -41,7 +41,7 @@ A modern, lightweight GUI wrapper for [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 
 ## Installation
 
-Download the latest release from the [Releases](https://github.com/hardtokidnap/yt-dlp-easy/releases) page.
+Download the latest release from the [Releases](https://github.com/hardtokidnap/Yt-dlp-made-easy/releases) page.
 
 The application will automatically download yt-dlp on first launch.
 
