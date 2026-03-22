@@ -888,7 +888,7 @@ window.applyConvertPreset = function(presetId) {
     const setField = (id, key) => {
         if (!(key in preset)) return;
         const el = document.getElementById(id);
-        if (el) el.value = preset[key] || '';
+        if (el) el.value = preset[key] ?? '';
     };
 
     setField('convert-format', 'output_format');
@@ -1834,9 +1834,9 @@ function setupEventListeners() {
     // Listen for queue updates
     EventsOn('queue:update', (items) => {
         if (items && Array.isArray(items)) {
-            items.forEach(item => {
-                state.downloads[item.id] = item;
-            });
+            // Treat as authoritative snapshot, not additive merge,
+            // so removed items don't linger as ghost cards
+            state.downloads = Object.fromEntries(items.map(item => [item.id, item]));
             if (state.currentTab === 'download') {
                 updateDownloadQueue();
             }
@@ -1898,13 +1898,16 @@ function setupEventListeners() {
         if (job.status === 'completed') {
             state.conversion = null;
             addLog(`Conversion complete: ${job.output_file}`);
-            resetConvertUI();
+            // Show completion message before resetting so the user sees it
             const statusEl = document.getElementById('convert-status');
             if (statusEl) { statusEl.textContent = 'Conversion complete!'; statusEl.classList.add('text-green-400'); }
+            setTimeout(resetConvertUI, 3000);
         } else if (job.status === 'failed') {
             state.conversion = null;
             addLog(`Conversion failed: ${job.error}`);
-            resetConvertUI();
+            const statusEl = document.getElementById('convert-status');
+            if (statusEl) { statusEl.textContent = `Failed: ${job.error}`; statusEl.classList.add('text-red-400'); }
+            setTimeout(resetConvertUI, 3000);
         }
     });
 
