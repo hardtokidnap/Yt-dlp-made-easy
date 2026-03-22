@@ -944,6 +944,10 @@ function resetConvertUI() {
         status.textContent = '';
         status.classList.remove('text-green-400', 'text-red-400');
     }
+    const speed = document.getElementById('convert-speed');
+    if (speed) speed.textContent = '';
+    const duration = document.getElementById('convert-duration');
+    if (duration) duration.textContent = '';
 }
 
 // History Tab
