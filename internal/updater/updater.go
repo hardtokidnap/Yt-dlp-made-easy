@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 
 	"ytdlp-easy/internal/util"
@@ -48,6 +49,10 @@ func (u *Updater) GetCurrentVersion() string {
 	}
 
 	cmd := exec.Command(util.YtDlpPath, "--version")
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: 0x08000000,
+	}
 	output, err := cmd.Output()
 	if err != nil {
 		return ""
@@ -114,13 +119,11 @@ func (u *Updater) Download() error {
 
 	u.notify("Downloading yt-dlp...")
 
-	// Create temp file with unique name
 	tempPath := util.YtDlpPath + ".tmp"
 
-	// Clean up any stale temp file
+	// Remove leftover from a previous interrupted download
 	os.Remove(tempPath)
 
-	// Download
 	client := &http.Client{Timeout: 5 * time.Minute}
 	resp, err := client.Get(downloadURL)
 	if err != nil {
@@ -132,13 +135,11 @@ func (u *Updater) Download() error {
 		return fmt.Errorf("download failed: %s", resp.Status)
 	}
 
-	// Create output file
 	out, err := os.Create(tempPath)
 	if err != nil {
 		return err
 	}
 
-	// Copy with progress (throttled to only update on % change)
 	totalSize := resp.ContentLength
 	written := int64(0)
 	buf := make([]byte, 32*1024)
@@ -168,13 +169,11 @@ func (u *Updater) Download() error {
 		}
 	}
 
-	// Close file before rename
 	out.Close()
 
-	// Try to replace old file with retries (handle file lock)
+	// Retry loop because antivirus or a running process may briefly lock the file
 	var renameErr error
 	for i := 0; i < 5; i++ {
-		// Remove old file if exists
 		if _, err := os.Stat(util.YtDlpPath); err == nil {
 			if err := os.Remove(util.YtDlpPath); err != nil {
 				u.notify(fmt.Sprintf("Waiting for file lock... attempt %d", i+1))
@@ -183,7 +182,6 @@ func (u *Updater) Download() error {
 			}
 		}
 
-		// Rename temp to final
 		renameErr = os.Rename(tempPath, util.YtDlpPath)
 		if renameErr == nil {
 			break
@@ -217,6 +215,10 @@ func (u *Updater) Update() error {
 	}
 
 	cmd := exec.Command(util.YtDlpPath, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: 0x08000000,
+	}
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {

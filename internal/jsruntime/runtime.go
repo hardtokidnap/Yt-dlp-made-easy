@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"ytdlp-easy/internal/util"
@@ -58,16 +59,15 @@ func DetectRuntimes() RuntimeInfo {
 		DenoPath:    BundledDenoPath(),
 	}
 
-	// Check for bundled Deno first
+	// Prefer bundled Deno since we control its version
 	if r := checkRuntime("deno", BundledDenoPath()); r != nil {
 		info.Available = append(info.Available, *r)
 	}
 
-	// Check system PATH for runtimes in order of preference
 	runtimes := []string{"deno", "node", "bun"}
 	for _, name := range runtimes {
 		if r := checkRuntimeInPath(name); r != nil {
-			// Avoid duplicates (bundled vs system)
+			// Skip if this is the same binary we already found as bundled
 			isDuplicate := false
 			for _, existing := range info.Available {
 				if existing.Path == r.Path {
@@ -81,7 +81,6 @@ func DetectRuntimes() RuntimeInfo {
 		}
 	}
 
-	// Set detected to first available (highest priority)
 	if len(info.Available) > 0 {
 		info.Detected = &info.Available[0]
 		info.NeedsInstall = false
@@ -140,6 +139,10 @@ func getRuntimeVersion(name, path string) string {
 	switch name {
 	case "deno", "node", "bun":
 		cmd = exec.Command(path, "--version")
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			HideWindow:    true,
+			CreationFlags: 0x08000000,
+		}
 	default:
 		return ""
 	}
@@ -201,7 +204,6 @@ func (d *Downloader) DownloadDeno() error {
 
 	d.notify("Downloading Deno...")
 
-	// Download the zip file with timeout
 	client := &http.Client{Timeout: 5 * time.Minute}
 	resp, err := client.Get(url)
 	if err != nil {
@@ -213,7 +215,6 @@ func (d *Downloader) DownloadDeno() error {
 		return fmt.Errorf("download failed with status: %d", resp.StatusCode)
 	}
 
-	// Create temp file for the zip
 	tempZip := filepath.Join(util.AppDataDir, "deno-temp.zip")
 	out, err := os.Create(tempZip)
 	if err != nil {
@@ -221,7 +222,6 @@ func (d *Downloader) DownloadDeno() error {
 	}
 	defer os.Remove(tempZip) // Clean up temp file
 
-	// Copy with progress
 	totalSize := resp.ContentLength
 	written := int64(0)
 	buf := make([]byte, 32*1024)
@@ -253,7 +253,6 @@ func (d *Downloader) DownloadDeno() error {
 
 	d.notify("Extracting Deno...")
 
-	// Extract deno.exe from the zip
 	if err := extractDenoFromZip(tempZip, BundledDenoPath()); err != nil {
 		return fmt.Errorf("failed to extract Deno: %w", err)
 	}
@@ -278,6 +277,10 @@ func extractDenoFromZip(zipPath, destPath string) error {
 				filepath.Dir(destPath),
 				filepath.Dir(destPath),
 				destPath))
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			HideWindow:    true,
+			CreationFlags: 0x08000000,
+		}
 		return cmd.Run()
 	}
 	return fmt.Errorf("extraction not implemented for this platform")
