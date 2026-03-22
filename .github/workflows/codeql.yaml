@@ -6,10 +6,6 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  GOOS: windows
-  GOARCH: amd64
-
 jobs:
   analyze:
     runs-on: ubuntu-latest
@@ -38,6 +34,9 @@ jobs:
           languages: go
 
       - name: Build
+        env:
+          GOOS: windows
+          GOARCH: amd64
         run: go build ./...
 
       - name: Perform CodeQL Analysis
