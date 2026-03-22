@@ -14,6 +14,8 @@ var (
 	HistoryFile string
 	// LogFile is the path to log file
 	LogFile string
+	// QueueFile is the path to persisted download queue
+	QueueFile string
 	// YtDlpPath is the path to yt-dlp.exe
 	YtDlpPath string
 	// DefaultDownloadFolder is the default download location
@@ -21,22 +23,18 @@ var (
 )
 
 func init() {
-	// Get AppData/Local directory
 	localAppData := os.Getenv("LOCALAPPDATA")
 	if localAppData == "" {
 		localAppData = filepath.Join(os.Getenv("USERPROFILE"), "AppData", "Local")
 	}
 
-	// Application directory
 	AppDataDir = filepath.Join(localAppData, "ytdlp-easy")
-
-	// Ensure directory exists
 	os.MkdirAll(AppDataDir, 0755)
 
-	// File paths
 	SettingsFile = filepath.Join(AppDataDir, "settings.json")
 	HistoryFile = filepath.Join(AppDataDir, "history.jsonl")
 	LogFile = filepath.Join(AppDataDir, "ytdlp.log")
+	QueueFile = filepath.Join(AppDataDir, "queue.json")
 	YtDlpPath = filepath.Join(AppDataDir, "yt-dlp.exe")
 
 	// Default download folder
