@@ -280,7 +280,10 @@ func (q *Queue) notifyItemUpdate(item *Item) {
 	if q.OnItemUpdate != nil {
 		q.OnItemUpdate(item)
 	}
-	q.Save()
+	// Only persist on status transitions, not every progress tick
+	if item.Status != StatusDownloading {
+		q.Save()
+	}
 }
 
 func (q *Queue) notifyQueueUpdate() {
