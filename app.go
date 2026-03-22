@@ -284,7 +284,7 @@ func (a *App) StartConversion(opts converter.ConversionOptions) (*converter.Conv
 	a.converter = c
 
 	go func() {
-		if err := c.Start(context.Background(), opts); err != nil {
+		if err := c.Start(a.ctx, opts); err != nil {
 			if job.Status != converter.StatusCancelled {
 				wailsruntime.EventsEmit(a.ctx, "convert:error", err.Error())
 			}

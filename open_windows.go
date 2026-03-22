@@ -26,7 +26,7 @@ func (a *App) OpenFile(path string) error {
 }
 
 func (a *App) OpenURL(url string) error {
-	cmd := exec.Command("cmd", "/c", "start", url)
+	cmd := exec.Command("cmd", "/c", "start", "", url)
 	cmd.SysProcAttr = hiddenSysProcAttr()
 	return cmd.Start()
 }

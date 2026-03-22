@@ -69,8 +69,10 @@ func (c *Converter) Start(ctx context.Context, opts ConversionOptions) error {
 		return fmt.Errorf("start ffmpeg: %w", err)
 	}
 
-	// Parse stderr for duration and progress
+	// Parse stderr in a goroutine, synchronized so we don't lose output if ffmpeg exits fast
+	stderrDone := make(chan struct{})
 	go func() {
+		defer close(stderrDone)
 		scanner := bufio.NewScanner(stderr)
 		scanner.Buffer(make([]byte, 64*1024), 64*1024)
 		for scanner.Scan() {
@@ -83,6 +85,7 @@ func (c *Converter) Start(ctx context.Context, opts ConversionOptions) error {
 	// Wait for completion in a goroutine so we can listen for cancellation
 	done := make(chan error, 1)
 	go func() {
+		<-stderrDone
 		done <- cmd.Wait()
 	}()
 

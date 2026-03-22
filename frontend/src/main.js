@@ -940,7 +940,10 @@ function resetConvertUI() {
     const bar = document.getElementById('convert-progress-bar');
     if (bar) bar.style.width = '0%';
     const status = document.getElementById('convert-status');
-    if (status) status.textContent = '';
+    if (status) {
+        status.textContent = '';
+        status.classList.remove('text-green-400', 'text-red-400');
+    }
 }
 
 // History Tab

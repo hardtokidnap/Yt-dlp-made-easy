@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 	"os"
 	"path/filepath"
 	"strings"
@@ -68,7 +69,8 @@ func (d *FFmpegDownloader) Download() error {
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
 
-	resp, err := http.Get(ffmpegDownloadURL)
+	client := &http.Client{Timeout: 5 * time.Minute}
+	resp, err := client.Get(ffmpegDownloadURL)
 	if err != nil {
 		return fmt.Errorf("download ffmpeg: %w", err)
 	}
