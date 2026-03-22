@@ -810,6 +810,28 @@ async function renderConvertTab() {
 
     // Store presets in state for applyConvertPreset
     state.conversionPresets = presets;
+
+    // Rehydrate UI if a conversion is already in progress
+    syncConversionUI(state.conversion);
+}
+
+function syncConversionUI(job) {
+    if (!job || ['completed', 'failed', 'cancelled'].includes(job.status)) return;
+
+    document.getElementById('convert-start-btn')?.classList.add('hidden');
+    document.getElementById('convert-progress')?.classList.remove('hidden');
+
+    const bar = document.getElementById('convert-progress-bar');
+    if (bar) bar.style.width = `${job.progress.toFixed(1)}%`;
+
+    const status = document.getElementById('convert-status');
+    if (status) status.textContent = `Converting... ${job.progress.toFixed(1)}%`;
+
+    const speed = document.getElementById('convert-speed');
+    if (speed) speed.textContent = job.speed || '';
+
+    const duration = document.getElementById('convert-duration');
+    if (duration) duration.textContent = job.duration || '';
 }
 
 // --- Convert Tab Handlers ---
@@ -863,26 +885,17 @@ window.applyConvertPreset = function(presetId) {
     const preset = (state.conversionPresets || []).find(p => p.id === presetId);
     if (!preset) return;
 
-    if (preset.output_format) {
-        const fmt = document.getElementById('convert-format');
-        if (fmt) { fmt.value = preset.output_format; }
-    }
-    if (preset.video_codec) {
-        const vc = document.getElementById('convert-vcodec');
-        if (vc) { vc.value = preset.video_codec; }
-    }
-    if (preset.audio_codec) {
-        const ac = document.getElementById('convert-acodec');
-        if (ac) { ac.value = preset.audio_codec; }
-    }
-    if (preset.preset) {
-        const p = document.getElementById('convert-preset');
-        if (p) { p.value = preset.preset; }
-    }
-    if (preset.audio_bitrate) {
-        const ab = document.getElementById('convert-abitrate');
-        if (ab) { ab.value = preset.audio_bitrate; }
-    }
+    const setField = (id, key) => {
+        if (!(key in preset)) return;
+        const el = document.getElementById(id);
+        if (el) el.value = preset[key] || '';
+    };
+
+    setField('convert-format', 'output_format');
+    setField('convert-vcodec', 'video_codec');
+    setField('convert-acodec', 'audio_codec');
+    setField('convert-preset', 'preset');
+    setField('convert-abitrate', 'audio_bitrate');
 
     addVerboseLog(`Applied preset: ${preset.name}`);
 };
@@ -1880,21 +1893,16 @@ function setupEventListeners() {
     EventsOn('convert:progress', (job) => {
         if (!job) return;
         state.conversion = job;
-        const bar = document.getElementById('convert-progress-bar');
-        if (bar) bar.style.width = job.progress.toFixed(1) + '%';
-        const status = document.getElementById('convert-status');
-        if (status) status.textContent = `Converting... ${job.progress.toFixed(1)}%`;
-        const speed = document.getElementById('convert-speed');
-        if (speed) speed.textContent = job.speed || '';
-        const dur = document.getElementById('convert-duration');
-        if (dur) dur.textContent = job.duration || '';
+        syncConversionUI(job);
 
         if (job.status === 'completed') {
+            state.conversion = null;
             addLog(`Conversion complete: ${job.output_file}`);
             resetConvertUI();
             const statusEl = document.getElementById('convert-status');
             if (statusEl) { statusEl.textContent = 'Conversion complete!'; statusEl.classList.add('text-green-400'); }
         } else if (job.status === 'failed') {
+            state.conversion = null;
             addLog(`Conversion failed: ${job.error}`);
             resetConvertUI();
         }
