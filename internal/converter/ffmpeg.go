@@ -66,8 +66,8 @@ func (d *FFmpegDownloader) Download() error {
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
 	}
-	defer os.Remove(tmpFile.Name())
-	defer tmpFile.Close()
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
 
 	client := &http.Client{Timeout: 5 * time.Minute}
 	resp, err := client.Get(ffmpegDownloadURL)
@@ -103,7 +103,9 @@ func (d *FFmpegDownloader) Download() error {
 			return fmt.Errorf("read response: %w", readErr)
 		}
 	}
-	tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("close temp file: %w", err)
+	}
 
 	d.emit("Extracting FFmpeg...")
 

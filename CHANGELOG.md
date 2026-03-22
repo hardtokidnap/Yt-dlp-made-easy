@@ -23,8 +23,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - Shell/console windows no longer flash on screen during background operations (downloads, updates, runtime checks)
-- "Open Folder" now correctly handles file paths with spaces on Windows (uses `SysProcAttr.CmdLine` to bypass Go's argument quoting)
-- Downloaded file path now tracks through yt-dlp post-processing steps (Merger, ExtractAudio, MoveFiles) so "Open Folder" points to the final file
+- "Open Folder" now correctly handles file paths with spaces on Windows
+- "Open Folder" now points to the final converted file instead of intermediate files
 
 ## [V2] - 2026-01-29
 
