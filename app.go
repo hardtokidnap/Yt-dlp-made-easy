@@ -3,12 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
-	"os/exec"
-	goruntime "runtime"
+	"time"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"ytdlp-easy/internal/config"
+	"ytdlp-easy/internal/converter"
 	"ytdlp-easy/internal/downloader"
 	"ytdlp-easy/internal/history"
 	"ytdlp-easy/internal/jsruntime"
@@ -19,11 +19,12 @@ import (
 // App is the Wails bridge between Go backend and the frontend.
 // All exported methods become callable from JavaScript.
 type App struct {
-	ctx      context.Context
-	settings *config.Settings
-	queue    *downloader.Queue
-	history  *history.History
-	updater  *updater.Updater
+	ctx       context.Context
+	settings  *config.Settings
+	queue     *downloader.Queue
+	history   *history.History
+	updater   *updater.Updater
+	converter *converter.Converter
 }
 
 func NewApp() *App {
@@ -33,15 +34,14 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 
-	// Load settings
 	settings, err := config.Load()
 	if err != nil {
 		settings = config.DefaultSettings()
 	}
 	a.settings = settings
 
-	// Create download queue
 	a.queue = downloader.NewQueue(settings)
+	a.queue.LoadPersistedItems()
 	a.queue.OnItemUpdate = func(item *downloader.Item) {
 		wailsruntime.EventsEmit(a.ctx, "download:update", item)
 	}
@@ -55,29 +55,30 @@ func (a *App) startup(ctx context.Context) {
 		})
 	}
 
-	// Load history
 	hist, err := history.NewHistory()
 	if err != nil {
 		hist = &history.History{}
 	}
 	a.history = hist
 
-	// Create updater
 	a.updater = updater.NewUpdater(settings.Advanced.UseNightly)
 	a.updater.OnProgress = func(msg string) {
 		wailsruntime.EventsEmit(a.ctx, "updater:progress", msg)
 	}
 
-	// Ensure yt-dlp is installed
 	go func() {
 		if err := a.updater.EnsureInstalled(); err != nil {
 			wailsruntime.EventsEmit(a.ctx, "error", "Failed to install yt-dlp: "+err.Error())
 		}
 
-		// Check for updates if enabled
 		if settings.General.CheckUpdatesOnStart {
-			if info, err := a.updater.CheckForUpdate(); err == nil && info.UpdateAvailable {
-				wailsruntime.EventsEmit(a.ctx, "update:available", info)
+			wailsruntime.EventsEmit(a.ctx, "update:checking", nil)
+			if info, err := a.updater.CheckForUpdate(); err == nil {
+				if info.UpdateAvailable {
+					wailsruntime.EventsEmit(a.ctx, "update:available", info)
+				} else {
+					wailsruntime.EventsEmit(a.ctx, "update:none", nil)
+				}
 			}
 		}
 	}()
@@ -99,14 +100,12 @@ type DownloadOptions struct {
 func (a *App) AddDownload(url string, opts DownloadOptions) (string, error) {
 	wailsruntime.LogDebug(a.ctx, "Adding download: "+url)
 
-	// Ensure yt-dlp is installed
 	if !a.updater.IsInstalled() {
 		return "", fmt.Errorf("yt-dlp is not installed yet, please wait for installation to complete")
 	}
 
 	item := a.queue.Add(url, opts.IsAudioOnly, opts.Quality, opts.Format)
 
-	// Emit initial state
 	wailsruntime.EventsEmit(a.ctx, "download:update", item)
 
 	return item.ID, nil
@@ -192,46 +191,6 @@ func (a *App) RedownloadFromHistory(id string) string {
 
 func (a *App) GetHistoryStats() map[string]interface{} { return a.history.Stats() }
 
-// OpenFile launches the OS default handler for a file path.
-func (a *App) OpenFile(path string) error {
-	var cmd *exec.Cmd
-	switch goruntime.GOOS {
-	case "windows":
-		cmd = exec.Command("cmd", "/c", "start", "", path)
-	case "darwin":
-		cmd = exec.Command("open", path)
-	default:
-		cmd = exec.Command("xdg-open", path)
-	}
-	return cmd.Start()
-}
-
-func (a *App) OpenURL(url string) error {
-	var cmd *exec.Cmd
-	switch goruntime.GOOS {
-	case "windows":
-		cmd = exec.Command("cmd", "/c", "start", url)
-	case "darwin":
-		cmd = exec.Command("open", url)
-	default:
-		cmd = exec.Command("xdg-open", url)
-	}
-	return cmd.Start()
-}
-
-func (a *App) OpenFolder(path string) error {
-	var cmd *exec.Cmd
-	switch goruntime.GOOS {
-	case "windows":
-		cmd = exec.Command("explorer", path)
-	case "darwin":
-		cmd = exec.Command("open", path)
-	default:
-		cmd = exec.Command("xdg-open", path)
-	}
-	return cmd.Start()
-}
-
 func (a *App) CheckForUpdates() (*updater.UpdateInfo, error) { return a.updater.CheckForUpdate() }
 func (a *App) UpdateYtDlp() error                            { return a.updater.Update() }
 func (a *App) GetYtDlpVersion() string                       { return a.updater.GetCurrentVersion() }
@@ -262,4 +221,123 @@ func (a *App) GetAppInfo() map[string]string {
 		"ytdlp_path":  util.YtDlpPath,
 		"config_path": util.AppDataDir,
 	}
+}
+
+// --- FFmpeg Converter ---
+
+func (a *App) BrowseInputFile() string {
+	path, err := wailsruntime.OpenFileDialog(a.ctx, wailsruntime.OpenDialogOptions{
+		Title: "Select Input File",
+		Filters: []wailsruntime.FileFilter{
+			{DisplayName: "Media Files", Pattern: "*.mp4;*.mkv;*.webm;*.avi;*.mov;*.flv;*.wmv;*.mp3;*.m4a;*.aac;*.ogg;*.opus;*.flac;*.wav"},
+			{DisplayName: "All Files", Pattern: "*.*"},
+		},
+	})
+	if err != nil {
+		return ""
+	}
+	return path
+}
+
+func (a *App) BrowseOutputFile(defaultName string) string {
+	path, err := wailsruntime.SaveFileDialog(a.ctx, wailsruntime.SaveDialogOptions{
+		Title:           "Save Output File",
+		DefaultFilename: defaultName,
+		Filters: []wailsruntime.FileFilter{
+			{DisplayName: "Media Files", Pattern: "*.mp4;*.mkv;*.webm;*.avi;*.mov;*.mp3;*.m4a;*.aac;*.ogg;*.opus;*.flac;*.wav"},
+			{DisplayName: "All Files", Pattern: "*.*"},
+		},
+	})
+	if err != nil {
+		return ""
+	}
+	return path
+}
+
+func (a *App) StartConversion(opts converter.ConversionOptions) (*converter.ConversionJob, error) {
+	if !converter.IsFFmpegInstalled() {
+		return nil, fmt.Errorf("FFmpeg is not installed. Please download it first.")
+	}
+
+	if opts.InputFile == "" {
+		return nil, fmt.Errorf("no input file selected")
+	}
+
+	// Only one conversion at a time — stop the previous one
+	if a.converter != nil {
+		a.converter.Cancel()
+	}
+
+	job := &converter.ConversionJob{
+		ID:        fmt.Sprintf("conv_%d", time.Now().UnixMilli()),
+		InputFile: opts.InputFile,
+		Status:    converter.StatusPending,
+	}
+
+	c := converter.NewConverter(job)
+	c.OnProgress = func(j *converter.ConversionJob) {
+		wailsruntime.EventsEmit(a.ctx, "convert:progress", j)
+	}
+	c.OnLog = func(line string) {
+		wailsruntime.EventsEmit(a.ctx, "convert:log", line)
+	}
+	a.converter = c
+
+	go func() {
+		if err := c.Start(context.Background(), opts); err != nil {
+			if job.Status != converter.StatusCancelled {
+				wailsruntime.EventsEmit(a.ctx, "convert:error", err.Error())
+			}
+		}
+	}()
+
+	return job, nil
+}
+
+func (a *App) CancelConversion() {
+	if a.converter != nil {
+		a.converter.Cancel()
+		a.converter = nil
+	}
+}
+
+func (a *App) GetConversionPresets() []converter.Preset {
+	return converter.GetPresets()
+}
+
+func (a *App) IsFFmpegInstalled() bool {
+	return converter.IsFFmpegInstalled()
+}
+
+func (a *App) GetFFmpegVersion() string {
+	ver, err := converter.GetFFmpegVersion()
+	if err != nil {
+		return ""
+	}
+	return ver
+}
+
+func (a *App) DownloadFFmpeg() error {
+	dl := &converter.FFmpegDownloader{
+		OnProgress: func(msg string) {
+			wailsruntime.EventsEmit(a.ctx, "ffmpeg:progress", msg)
+		},
+	}
+	return dl.Download()
+}
+
+// GetRecentCompletedDownloads returns completed queue items with file paths for the converter's "recent downloads" dropdown.
+func (a *App) GetRecentCompletedDownloads() []map[string]string {
+	items := a.queue.GetAll()
+	var result []map[string]string
+	for _, item := range items {
+		if item.Status == downloader.StatusCompleted && item.FilePath != "" {
+			result = append(result, map[string]string{
+				"id":        item.ID,
+				"title":     item.Title,
+				"file_path": item.FilePath,
+			})
+		}
+	}
+	return result
 }
