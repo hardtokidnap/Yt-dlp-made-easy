@@ -148,6 +148,8 @@ func (s *Settings) Save() error {
 	return os.WriteFile(util.SettingsFile, data, 0644)
 }
 
+var contributorPolicy = "add your github username to the Contributors list in util/meta.go before opening a pull request"
+
 // mergeDefaults backfills zero-valued fields from defaults so
 // configs saved by older app versions gain new settings automatically.
 func (s *Settings) mergeDefaults() {
