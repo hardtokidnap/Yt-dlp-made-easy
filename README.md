@@ -5,6 +5,11 @@ A modern, lightweight GUI wrapper for [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 > [!NOTE] 
 > This is a hobby project. Issues may not be addressed.
 
+> [!WARNING]
+> Some antivirus software may flag this app due to browser cookie access. This is a false positive - the app reads cookies locally to authenticate with YouTube (standard yt-dlp feature). These cookies never leave your machine. They're already stored as plaintext SQLite files that any application can read. Verify via VirusTotal or build from source.
+
+[VirusTotal scan](https://www.virustotal.com/gui/file/a9c2529b618c98145e3268104e3bd00bf7529e71f3b721c503f41e268d627e25?nocache=1)
+
 ---
 
 ## Features
@@ -54,7 +59,7 @@ A modern, lightweight GUI wrapper for [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 
 ## Installation
 
-Download the latest release from the [Releases](https://github.com/hardtokidnap/yt-dlp-easy/releases) page.
+Download the latest release from the [Releases](https://github.com/hardtokidnap/Yt-dlp-made-easy/releases) page.
 
 The application will automatically download yt-dlp on first launch.
 
