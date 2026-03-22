@@ -7,23 +7,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
-- Download queue persists across app restarts
-- "Open Folder" button in the download queue highlights the downloaded file in your file manager
-- Inline update indicator in the header bar shows update status without interrupting your workflow
-- Per-item remove button and "Clear Queue" button for download queue management
-- Audio/video badge on download queue items
-- Verbose logging toggle (disabled by default, persistent)
-- Platform-specific file/folder opening (Windows, macOS, Linux)
+- Download queue now persists across app restarts — your queue is saved to disk and restored on launch
+- "Open Folder" button on completed downloads opens the file manager and highlights the file
+- Per-item remove button (✕) on completed/stopped downloads and "Clear Queue" button to bulk-remove finished items
+- Audio/video badge on each download queue item so you can tell at a glance what type it is
+- Verbose logging toggle in Settings (disabled by default, persistent) for debugging
+- FFmpeg converter tab — convert media files with presets (Video to MP3, MP4, MKV, WebM, FLAC, WAV), codec options, custom args, and real-time progress
+- Automatic FFmpeg download when opening the Convert tab for the first time
+- "Pick a recent download" dropdown in converter to convert files straight from the queue
 
 ### Changed
-- YT-DLP now defaults to the Nightly build instead of Stable for access to the latest fixes
-- Download queue now shows only the video/song title instead of the full URL
-- Update notifications replaced with a non-intrusive inline header indicator
+- Default yt-dlp build switched from Stable to Nightly for access to the latest fixes
+- Update check replaced the blocking popup (`confirm()` dialog) with a non-intrusive inline indicator in the header bar
+- Download queue cards now show only the video/song title instead of the full URL
 
 ### Fixed
 - Shell/console windows no longer flash on screen during background operations (downloads, updates, runtime checks)
-- "Open Folder" now correctly handles file paths with spaces on Windows
-- Downloaded file path now tracks through post-processing steps (merging, audio extraction, file moves)
+- "Open Folder" now correctly handles file paths with spaces on Windows (uses `SysProcAttr.CmdLine` to bypass Go's argument quoting)
+- Downloaded file path now tracks through yt-dlp post-processing steps (Merger, ExtractAudio, MoveFiles) so "Open Folder" points to the final file
 
 ## [V2] - 2026-01-29
 
