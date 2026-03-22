@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"sort"
 	"sync"
 
 	"ytdlp-easy/internal/config"
@@ -177,6 +178,10 @@ func (q *Queue) GetAll() []*Item {
 	for _, item := range q.items {
 		items = append(items, item)
 	}
+	// Stable order so UI cards don't jump between updates
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].CreatedAt.Before(items[j].CreatedAt)
+	})
 	return items
 }
 
