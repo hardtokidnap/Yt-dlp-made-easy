@@ -25,7 +25,11 @@ func FFmpegPath() string  { return ffmpegPath }
 func FFprobePath() string { return ffprobePath }
 
 func IsFFmpegInstalled() bool {
-	_, err := os.Stat(ffmpegPath)
+	// Both binaries must exist — a partial extract could leave just one
+	if _, err := os.Stat(ffmpegPath); err != nil {
+		return false
+	}
+	_, err := os.Stat(ffprobePath)
 	return err == nil
 }
 
