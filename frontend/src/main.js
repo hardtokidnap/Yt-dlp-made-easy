@@ -8,12 +8,15 @@ const state = {
     downloads: {},
     history: [],
     settings: null,
-    logs: []
+    logs: [],
+    conversion: null,
+    ffmpegInstalled: false
 };
 
 // Tab definitions
 const tabs = [
     {id: 'download', label: 'Download', icon: '⬇️'},
+    {id: 'convert', label: 'Convert', icon: '🔄'},
     {id: 'history', label: 'History', icon: '📜'},
     {id: 'settings', label: 'Settings', icon: '⚙️'},
     {id: 'log', label: 'Log', icon: '📋'}
@@ -66,6 +69,7 @@ window.switchTab = function(tabId) {
 
     const contentMap = {
         'download': renderDownloadTab,
+        'convert': renderConvertTab,
         'history': renderHistoryTab,
         'settings': renderSettingsTab,
         'log': renderLogTab
@@ -139,7 +143,12 @@ function renderDownloadTab() {
 
             <!-- Download Queue -->
             <div class="card">
-                <h2 class="text-xl font-semibold mb-4">Download Queue</h2>
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold">Download Queue</h2>
+                    <button onclick="window.clearQueue()" class="btn-secondary text-sm">
+                        🗑️ Clear Queue
+                    </button>
+                </div>
                 <div id="download-queue" class="space-y-3">
                     <p class="text-gray-400 text-center py-8">No active downloads</p>
                 </div>
@@ -241,14 +250,20 @@ function updateDownloadQueue() {
 
 // Render a normal download card
 function renderDownloadCard(item) {
+    const badge = item.is_audio_only
+        ? '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-900/50 text-purple-300 border border-purple-700/50">🎵 Audio</span>'
+        : '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-900/50 text-blue-300 border border-blue-700/50">🎬 Video</span>';
+
     return `
         <div class="bg-gray-700 rounded-lg p-4 space-y-2">
             <div class="flex justify-between items-start">
                 <div class="flex-1 mr-4">
-                    <div class="font-medium truncate">${escapeHtml(item.title || item.url)}</div>
-                    <div class="text-sm text-gray-400 truncate">${escapeHtml(item.url)}</div>
+                    <div class="flex items-center gap-2">
+                        ${badge}
+                        <span class="font-medium truncate">${escapeHtml(item.title || item.url)}</span>
+                    </div>
                 </div>
-                <div class="flex space-x-2">
+                <div class="flex items-center space-x-2">
                     ${item.status === 'downloading' ? `
                         <button onclick="window.pauseDownload('${item.id}')" class="btn-secondary text-xs">
                             ⏸️ Pause
@@ -263,6 +278,14 @@ function renderDownloadCard(item) {
                         <button onclick="window.stopDownload('${item.id}')" class="btn-danger text-xs">
                             ⏹️ Stop
                         </button>
+                    ` : ''}
+                    ${item.status === 'completed' && item.file_path ? `
+                        <button onclick="window.openFileInFolder('${item.id}')" class="btn-secondary text-xs">
+                            📂 Open Folder
+                        </button>
+                    ` : ''}
+                    ${item.status === 'completed' || item.status === 'stopped' ? `
+                        <button onclick="window.removeFromQueue('${item.id}')" class="text-gray-500 hover:text-gray-300 text-lg leading-none" title="Remove from queue">✕</button>
                     ` : ''}
                 </div>
             </div>
@@ -403,24 +426,41 @@ window.stopDownload = async function(id) {
     }
 };
 
-// Dismiss an error from the queue
-window.dismissError = async function(id) {
-    addLog(`🗑️ dismissError called with id: ${id}`);
-    addLog(`📦 state.downloads keys: ${Object.keys(state.downloads).join(', ') || '(empty)'}`);
+// Remove an item from the queue
+window.removeFromQueue = async function(id) {
+    addVerboseLog(`removeFromQueue: id=${id}`);
     try {
         await App.RemoveDownload(id);
         delete state.downloads[id];
         updateDownloadQueue();
-        addLog(`✓ Dismissed download`);
+        addVerboseLog(`Removed download ${id} from queue`);
     } catch (err) {
-        addLog(`⚠️ Failed to dismiss: ${err}`);
+        addLog(`⚠️ Failed to remove: ${err}`);
+    }
+};
+window.dismissError = window.removeFromQueue;
+
+// Clear all completed/stopped/error items from the queue
+window.clearQueue = async function() {
+    try {
+        const count = await App.ClearCompletedDownloads();
+        Object.keys(state.downloads).forEach(id => {
+            const item = state.downloads[id];
+            if (item.status === 'completed' || item.status === 'error' || item.status === 'stopped') {
+                delete state.downloads[id];
+            }
+        });
+        updateDownloadQueue();
+        addLog(`Cleared ${count} items from queue`);
+    } catch (err) {
+        addLog(`⚠️ Failed to clear queue: ${err}`);
     }
 };
 
 // Retry a failed download
 window.retryDownload = async function(id) {
-    addLog(`🔄 retryDownload called with id: ${id}`);
-    addLog(`📦 state.downloads keys: ${Object.keys(state.downloads).join(', ') || '(empty)'}`);
+    addVerboseLog(`retryDownload called with id: ${id}`);
+    addVerboseLog(`state.downloads keys: ${Object.keys(state.downloads).join(', ') || '(empty)'}`);
     const item = state.downloads[id];
     if (!item) {
         addLog(`⚠️ Cannot retry: download ${id} not found in queue`);
@@ -449,24 +489,24 @@ window.retryDownload = async function(id) {
 
 // Apply a suggestion to fix an error
 window.applySuggestion = async function(itemId, suggestionId, action, actionData) {
-    addLog(`🔧 applySuggestion: ${suggestionId} (${action})`);
-    addLog(`📦 itemId: ${itemId}, state keys: ${Object.keys(state.downloads).join(', ') || '(empty)'}`);
+    addVerboseLog(`applySuggestion: ${suggestionId} (${action})`);
+    addVerboseLog(`itemId: ${itemId}, state keys: ${Object.keys(state.downloads).join(', ') || '(empty)'}`);
     const item = state.downloads[itemId];
     if (!item) {
         addLog(`⚠️ Cannot apply fix: download ${itemId} not found`);
         return;
     }
 
-    addLog(`💡 Applying fix: ${suggestionId}`);
+    addVerboseLog(`Applying fix: ${suggestionId}`);
 
     try {
         switch (action) {
             case 'apply_setting':
                 await applySettingFix(actionData);
-                addLog(`✓ Settings applied, now retrying with id: ${itemId}`);
+                addVerboseLog(`Settings applied, now retrying with id: ${itemId}`);
                 // Auto-retry after applying setting
                 await window.retryDownload(itemId);
-                addLog(`✓ Retry initiated`);
+                addVerboseLog(`Retry initiated`);
                 break;
 
             case 'open_settings':
@@ -521,17 +561,17 @@ async function applySettingFix(actionData) {
     switch (key) {
         case 'player_client':
             state.settings.Auth.PlayerClient = value;
-            addLog(`⚙️ Changed player client to: ${value}`);
+            addVerboseLog(`Changed player client to: ${value}`);
             break;
 
         case 'use_nightly':
             state.settings.Advanced.UseNightly = value === 'true';
-            addLog(`⚙️ ${value === 'true' ? 'Enabled' : 'Disabled'} nightly builds`);
+            addVerboseLog(`${value === 'true' ? 'Enabled' : 'Disabled'} nightly builds`);
             break;
 
         case 'max_concurrent':
             state.settings.General.MaxConcurrentDownloads = parseInt(value) || 1;
-            addLog(`⚙️ Set max concurrent downloads to: ${value}`);
+            addVerboseLog(`Set max concurrent downloads to: ${value}`);
             break;
 
         default:
@@ -541,7 +581,7 @@ async function applySettingFix(actionData) {
 
     // Save the settings
     await App.SaveSettings(state.settings);
-    addLog('⚙️ Settings saved');
+    addVerboseLog('Settings saved via applySettingFix');
 }
 
 // Get status display text
@@ -555,6 +595,352 @@ function getStatusText(item) {
         'error': `Error: ${item.error || 'Unknown'}`
     };
     return statusMap[item.status] || item.status;
+}
+
+// Convert Tab (FFmpeg)
+async function renderConvertTab() {
+    const content = document.getElementById('tab-content');
+
+    let ffmpegInstalled = false;
+    try {
+        ffmpegInstalled = await App.IsFFmpegInstalled();
+    } catch (_) { /* ignore */ }
+
+    if (!ffmpegInstalled) {
+        content.innerHTML = `
+            <div class="max-w-4xl mx-auto space-y-6">
+                <div class="card">
+                    <div class="text-center py-12">
+                        <div class="text-4xl mb-4">🔄</div>
+                        <h2 class="text-xl font-semibold mb-2">FFmpeg Required</h2>
+                        <p class="text-gray-400 mb-6">FFmpeg is needed for media conversion. Click below to download it automatically.</p>
+                        <button id="download-ffmpeg-btn" onclick="window.downloadFFmpeg()" class="btn-primary px-8 py-3">
+                            Download FFmpeg
+                        </button>
+                        <div id="ffmpeg-progress" class="mt-4 text-sm text-gray-400 hidden"></div>
+                    </div>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    // Load presets and recent downloads in parallel
+    let presets = [];
+    let recentDownloads = [];
+    try {
+        [presets, recentDownloads] = await Promise.all([
+            App.GetConversionPresets(),
+            App.GetRecentCompletedDownloads()
+        ]);
+    } catch (_) { /* ignore */ }
+
+    const recentOptions = (recentDownloads || []).map(d =>
+        `<option value="${escapeHtml(d.file_path)}">${escapeHtml(d.title || d.file_path)}</option>`
+    ).join('');
+
+    content.innerHTML = `
+        <div class="max-w-4xl mx-auto space-y-6">
+            <!-- Input File -->
+            <div class="card">
+                <h3 class="text-lg font-semibold mb-4">Input</h3>
+                <div class="space-y-3">
+                    <div class="flex space-x-2">
+                        <input type="text" id="convert-input" class="input-field flex-1" placeholder="Select a media file..." readonly>
+                        <button onclick="window.browseInputFile()" class="btn-secondary">Browse</button>
+                    </div>
+                    ${recentOptions ? `
+                        <div>
+                            <label class="block text-sm text-gray-400 mb-1">Or pick a recent download:</label>
+                            <select id="recent-downloads" class="select-field w-full" onchange="window.selectRecentDownload(this.value)">
+                                <option value="">-- Select --</option>
+                                ${recentOptions}
+                            </select>
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+
+            <!-- Presets -->
+            <div class="card">
+                <h3 class="text-lg font-semibold mb-4">Quick Presets</h3>
+                <div class="flex flex-wrap gap-2">
+                    ${presets.map(p => `
+                        <button onclick="window.applyConvertPreset('${p.id}')"
+                                class="bg-gray-700 hover:bg-gray-600 text-sm px-3 py-2 rounded transition-colors"
+                                title="${escapeHtml(p.description)}">
+                            ${escapeHtml(p.name)}
+                        </button>
+                    `).join('')}
+                </div>
+            </div>
+
+            <!-- Output Options -->
+            <div class="card">
+                <h3 class="text-lg font-semibold mb-4">Output Options</h3>
+                <div class="space-y-4">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Output Format</label>
+                            <select id="convert-format" class="select-field w-full">
+                                <optgroup label="Video">
+                                    <option value="mp4">MP4</option>
+                                    <option value="mkv">MKV</option>
+                                    <option value="webm">WebM</option>
+                                    <option value="avi">AVI</option>
+                                    <option value="mov">MOV</option>
+                                </optgroup>
+                                <optgroup label="Audio">
+                                    <option value="mp3">MP3</option>
+                                    <option value="aac">AAC</option>
+                                    <option value="m4a">M4A</option>
+                                    <option value="flac">FLAC</option>
+                                    <option value="wav">WAV</option>
+                                    <option value="ogg">OGG</option>
+                                    <option value="opus">Opus</option>
+                                </optgroup>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Encoder Preset</label>
+                            <select id="convert-preset" class="select-field w-full">
+                                <option value="">Default</option>
+                                <option value="ultrafast">Ultrafast</option>
+                                <option value="veryfast">Very Fast</option>
+                                <option value="fast">Fast</option>
+                                <option value="medium">Medium</option>
+                                <option value="slow">Slow (better quality)</option>
+                                <option value="veryslow">Very Slow (best quality)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Video Codec</label>
+                            <select id="convert-vcodec" class="select-field w-full">
+                                <option value="">Auto</option>
+                                <option value="libx264">H.264</option>
+                                <option value="libx265">H.265 (HEVC)</option>
+                                <option value="libvpx-vp9">VP9</option>
+                                <option value="copy">Copy (no re-encode)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Audio Codec</label>
+                            <select id="convert-acodec" class="select-field w-full">
+                                <option value="">Auto</option>
+                                <option value="aac">AAC</option>
+                                <option value="libmp3lame">MP3</option>
+                                <option value="libopus">Opus</option>
+                                <option value="flac">FLAC</option>
+                                <option value="copy">Copy (no re-encode)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Video Bitrate</label>
+                            <input type="text" id="convert-vbitrate" class="input-field" placeholder="e.g. 5M">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Audio Bitrate</label>
+                            <select id="convert-abitrate" class="select-field w-full">
+                                <option value="">Default</option>
+                                <option value="320k">320k</option>
+                                <option value="256k">256k</option>
+                                <option value="192k" selected>192k</option>
+                                <option value="128k">128k</option>
+                                <option value="96k">96k</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Resolution</label>
+                            <select id="convert-resolution" class="select-field w-full">
+                                <option value="">Original</option>
+                                <option value="-1:2160">4K (2160p)</option>
+                                <option value="-1:1440">1440p</option>
+                                <option value="-1:1080">1080p</option>
+                                <option value="-1:720">720p</option>
+                                <option value="-1:480">480p</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Custom FFmpeg Arguments</label>
+                        <input type="text" id="convert-custom-args" class="input-field" placeholder="e.g. -ss 00:01:00 -t 30">
+                        <p class="text-xs text-gray-500 mt-1">Added to the FFmpeg command as-is. Use for trimming, filters, etc.</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Output File</label>
+                        <div class="flex space-x-2">
+                            <input type="text" id="convert-output" class="input-field flex-1" placeholder="Auto-generated from input file">
+                            <button onclick="window.browseOutputFile()" class="btn-secondary">Browse</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Convert Button & Progress -->
+            <div class="card">
+                <div id="convert-action" class="space-y-4">
+                    <button id="convert-start-btn" onclick="window.startConversion()" class="btn-primary w-full py-3 text-lg">
+                        🔄 Convert
+                    </button>
+                </div>
+                <div id="convert-progress" class="hidden space-y-3 mt-4">
+                    <div class="flex justify-between items-center">
+                        <span id="convert-status" class="text-sm text-gray-300">Converting...</span>
+                        <span id="convert-speed" class="text-sm text-gray-400"></span>
+                    </div>
+                    <div class="progress-bar">
+                        <div id="convert-progress-bar" class="progress-bar-fill" style="width: 0%"></div>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span id="convert-duration" class="text-sm text-gray-400"></span>
+                        <button onclick="window.cancelConversion()" class="btn-danger text-sm">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Store presets in state for applyConvertPreset
+    state.conversionPresets = presets;
+}
+
+// --- Convert Tab Handlers ---
+
+window.downloadFFmpeg = async function() {
+    const btn = document.getElementById('download-ffmpeg-btn');
+    const progress = document.getElementById('ffmpeg-progress');
+    if (btn) { btn.disabled = true; btn.textContent = 'Downloading...'; }
+    if (progress) { progress.classList.remove('hidden'); }
+
+    try {
+        await App.DownloadFFmpeg();
+        addLog('FFmpeg installed successfully');
+        // Re-render to show full converter UI
+        renderConvertTab();
+    } catch (err) {
+        addLog(`Failed to download FFmpeg: ${err}`);
+        if (btn) { btn.disabled = false; btn.textContent = 'Download FFmpeg'; }
+        if (progress) { progress.textContent = 'Download failed: ' + err; }
+    }
+};
+
+window.browseInputFile = async function() {
+    const path = await App.BrowseInputFile();
+    if (path) {
+        document.getElementById('convert-input').value = path;
+    }
+};
+
+window.selectRecentDownload = function(path) {
+    if (path) {
+        document.getElementById('convert-input').value = path;
+    }
+};
+
+window.browseOutputFile = async function() {
+    const inputPath = document.getElementById('convert-input')?.value || '';
+    const format = document.getElementById('convert-format')?.value || 'mp4';
+    let defaultName = 'output.' + format;
+    if (inputPath) {
+        const base = inputPath.replace(/\.[^.]+$/, '');
+        defaultName = base.split(/[\\/]/).pop() + '_converted.' + format;
+    }
+    const path = await App.BrowseOutputFile(defaultName);
+    if (path) {
+        document.getElementById('convert-output').value = path;
+    }
+};
+
+window.applyConvertPreset = function(presetId) {
+    const preset = (state.conversionPresets || []).find(p => p.id === presetId);
+    if (!preset) return;
+
+    if (preset.output_format) {
+        const fmt = document.getElementById('convert-format');
+        if (fmt) { fmt.value = preset.output_format; }
+    }
+    if (preset.video_codec) {
+        const vc = document.getElementById('convert-vcodec');
+        if (vc) { vc.value = preset.video_codec; }
+    }
+    if (preset.audio_codec) {
+        const ac = document.getElementById('convert-acodec');
+        if (ac) { ac.value = preset.audio_codec; }
+    }
+    if (preset.preset) {
+        const p = document.getElementById('convert-preset');
+        if (p) { p.value = preset.preset; }
+    }
+    if (preset.audio_bitrate) {
+        const ab = document.getElementById('convert-abitrate');
+        if (ab) { ab.value = preset.audio_bitrate; }
+    }
+
+    addVerboseLog(`Applied preset: ${preset.name}`);
+};
+
+window.startConversion = async function() {
+    const inputFile = document.getElementById('convert-input')?.value;
+    if (!inputFile) {
+        alert('Please select an input file');
+        return;
+    }
+
+    const opts = {
+        input_file:    inputFile,
+        output_file:   document.getElementById('convert-output')?.value || '',
+        output_format: document.getElementById('convert-format')?.value || 'mp4',
+        video_codec:   document.getElementById('convert-vcodec')?.value || '',
+        audio_codec:   document.getElementById('convert-acodec')?.value || '',
+        preset:        document.getElementById('convert-preset')?.value || '',
+        video_bitrate: document.getElementById('convert-vbitrate')?.value || '',
+        audio_bitrate: document.getElementById('convert-abitrate')?.value || '',
+        resolution:    document.getElementById('convert-resolution')?.value || '',
+        custom_args:   document.getElementById('convert-custom-args')?.value || ''
+    };
+
+    try {
+        await App.StartConversion(opts);
+        addLog(`Converting: ${inputFile}`);
+
+        // Show progress, hide start button
+        const startBtn = document.getElementById('convert-start-btn');
+        if (startBtn) startBtn.classList.add('hidden');
+        const progressDiv = document.getElementById('convert-progress');
+        if (progressDiv) progressDiv.classList.remove('hidden');
+    } catch (err) {
+        alert('Failed to start conversion: ' + err);
+        addLog(`Conversion error: ${err}`);
+    }
+};
+
+window.cancelConversion = async function() {
+    try {
+        await App.CancelConversion();
+        addLog('Conversion cancelled');
+        resetConvertUI();
+    } catch (err) {
+        addLog(`Cancel error: ${err}`);
+    }
+};
+
+function resetConvertUI() {
+    const startBtn = document.getElementById('convert-start-btn');
+    if (startBtn) startBtn.classList.remove('hidden');
+    const progressDiv = document.getElementById('convert-progress');
+    if (progressDiv) progressDiv.classList.add('hidden');
+    const bar = document.getElementById('convert-progress-bar');
+    if (bar) bar.style.width = '0%';
+    const status = document.getElementById('convert-status');
+    if (status) status.textContent = '';
 }
 
 // History Tab
@@ -666,6 +1052,26 @@ window.openFile = function(path) {
     }
 };
 
+window.openFileInFolder = async function(id) {
+    addVerboseLog(`openFileInFolder called with id: ${id}`);
+    const item = state.downloads[id];
+    if (!item) {
+        addVerboseLog(`Item not found in state.downloads. Keys: ${Object.keys(state.downloads).join(', ') || '(empty)'}`);
+        return;
+    }
+    addVerboseLog(`file_path: "${item.file_path || '(empty)'}",  status: "${item.status}", title: "${item.title || '(none)'}"`);
+    if (!item.file_path) {
+        addLog(`⚠️ file_path is empty — cannot open folder`);
+        return;
+    }
+    try {
+        await App.OpenFileInFolder(item.file_path);
+        addVerboseLog(`OpenFileInFolder succeeded`);
+    } catch (err) {
+        addLog(`❌ OpenFileInFolder error: ${err}`);
+    }
+};
+
 window.openURL = function(url) {
     if (url) {
         App.OpenURL(url).catch(err => console.error('Failed to open URL:', err));
@@ -708,7 +1114,7 @@ function renderSettingsTab() {
 async function loadSettings() {
     try {
         state.settings = await App.GetSettings();
-        addLog('Settings loaded successfully');
+        addVerboseLog('Settings loaded');
     } catch (err) {
         console.error('Failed to load settings:', err);
         addLog('⚠️ Failed to load settings: ' + err);
@@ -757,6 +1163,11 @@ async function loadSettingsContent() {
                         <input type="checkbox" id="notifications" ${s.General.NotificationsEnabled ? 'checked' : ''}
                                class="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-600">
                         <span class="text-sm">Enable notifications</span>
+                    </label>
+                    <label class="flex items-center space-x-2 cursor-pointer">
+                        <input type="checkbox" id="verbose-logging" ${s.General.VerboseLogging ? 'checked' : ''}
+                               class="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-600">
+                        <span class="text-sm">Verbose logging</span>
                     </label>
                 </div>
             </div>
@@ -1126,6 +1537,7 @@ function collectSettingsFromForm() {
     state.settings.General.CheckUpdatesOnStart = getElement('check-updates')?.checked ?? state.settings.General.CheckUpdatesOnStart;
     state.settings.General.ClipboardMonitoring = getElement('clipboard-monitoring')?.checked ?? state.settings.General.ClipboardMonitoring;
     state.settings.General.NotificationsEnabled = getElement('notifications')?.checked ?? state.settings.General.NotificationsEnabled;
+    state.settings.General.VerboseLogging = getElement('verbose-logging')?.checked ?? state.settings.General.VerboseLogging;
 
     state.settings.Download.AudioFormat = getElement('audio-format')?.value ?? state.settings.Download.AudioFormat;
     state.settings.Download.AudioQuality = getElement('audio-quality')?.value ?? state.settings.Download.AudioQuality;
@@ -1162,7 +1574,7 @@ function autoSaveSettings() {
 
         try {
             await App.SaveSettings(state.settings);
-            addLog('⚙️ Settings auto-saved');
+            addVerboseLog('Settings auto-saved');
         } catch (err) {
             console.error('Auto-save failed:', err);
         }
@@ -1172,7 +1584,7 @@ function autoSaveSettings() {
 // Setup auto-save listeners for settings inputs
 function setupSettingsAutoSave() {
     const settingsInputIds = [
-        'max-concurrent', 'check-updates', 'clipboard-monitoring', 'notifications',
+        'max-concurrent', 'check-updates', 'clipboard-monitoring', 'notifications', 'verbose-logging',
         'audio-format', 'audio-quality', 'embed-thumbnail', 'embed-metadata',
         'embed-chapters', 'sponsorblock', 'rate-limit', 'proxy', 'retries',
         'cookies-browser', 'cookies-file', 'player-client', 'po-token', 'use-nightly',
@@ -1199,21 +1611,6 @@ window.saveSettings = async function() {
     }
 };
 
-window.checkForUpdates = async function() {
-    try {
-        const info = await App.CheckForUpdates();
-        if (info && info.update_available) {
-            if (confirm(`Update available!\n\nCurrent: ${info.current_version}\nLatest: ${info.latest_version}\n\nUpdate now?`)) {
-                await App.UpdateYtDlp();
-                alert('yt-dlp updated successfully!');
-            }
-        } else {
-            alert('yt-dlp is up to date!\n\nVersion: ' + (info ? info.current_version : 'unknown'));
-        }
-    } catch (err) {
-        alert('Failed to check for updates: ' + err);
-    }
-};
 
 window.downloadDeno = async function() {
     const btn = document.getElementById('download-deno-btn');
@@ -1263,11 +1660,13 @@ function renderLogTab() {
     displayLogs();
 }
 
-function addLog(message) {
+function addLog(message, isVerbose = false) {
+    if (isVerbose && !state.settings?.General?.VerboseLogging) {
+        return;
+    }
     const timestamp = new Date().toLocaleTimeString();
     state.logs.push(`[${timestamp}] ${message}`);
 
-    // Keep last 1000 log entries
     if (state.logs.length > 1000) {
         state.logs = state.logs.slice(-1000);
     }
@@ -1275,6 +1674,10 @@ function addLog(message) {
     if (state.currentTab === 'log') {
         displayLogs();
     }
+}
+
+function addVerboseLog(message) {
+    addLog(message, true);
 }
 
 function displayLogs() {
@@ -1397,11 +1800,15 @@ function isVideoURL(url) {
 function setupEventListeners() {
     // Listen for download updates
     EventsOn('download:update', (item) => {
+        const prev = state.downloads[item.id];
         state.downloads[item.id] = item;
         if (state.currentTab === 'download') {
             updateDownloadQueue();
         }
-        addLog(`📥 ${item.title || item.url} - ${item.status}`);
+        if (item.file_path && (!prev || prev.file_path !== item.file_path)) {
+            addVerboseLog(`file_path set: "${item.file_path}"`);
+        }
+        addVerboseLog(`${item.title || item.url} - ${item.status}`);
     });
 
     // Listen for queue updates
@@ -1419,22 +1826,23 @@ function setupEventListeners() {
     // Listen for yt-dlp output logs
     EventsOn('download:log', (data) => {
         if (data && data.line) {
-            // Filter out noisy progress lines (only show significant output)
             const line = data.line;
-            if (!line.startsWith('[download]') ||
+            const isSignificant = !line.startsWith('[download]') ||
                 line.includes('Destination:') ||
                 line.includes('ERROR') ||
                 line.includes('WARNING') ||
                 line.includes('has already been downloaded') ||
-                line.includes('Downloading item')) {
+                line.includes('Downloading item');
+            if (isSignificant) {
                 addLog(`📺 ${line}`);
+            } else {
+                addVerboseLog(`📺 ${line}`);
             }
         }
     });
 
-    // Listen for updater progress
     EventsOn('updater:progress', (message) => {
-        addLog(`🔧 ${message}`);
+        addVerboseLog(`updater: ${message}`);
     });
 
     // Listen for errors
@@ -1443,15 +1851,17 @@ function setupEventListeners() {
         alert('Error: ' + message);
     });
 
-    // Listen for update available
+    // Update status indicators — inline in the header bar
+    EventsOn('update:checking', () => {
+        showUpdateChecking();
+    });
+
     EventsOn('update:available', (info) => {
-        if (confirm(`yt-dlp update available!\n\nCurrent: ${info.current_version}\nLatest: ${info.latest_version}\n\nUpdate now?`)) {
-            App.UpdateYtDlp().then(() => {
-                addLog('✅ yt-dlp updated successfully');
-            }).catch(err => {
-                addLog('❌ Update failed: ' + err);
-            });
-        }
+        showUpdateAvailable(info);
+    });
+
+    EventsOn('update:none', () => {
+        showNoUpdate();
     });
 
     // Listen for log messages
@@ -1459,9 +1869,47 @@ function setupEventListeners() {
         addLog(message);
     });
 
-    // Listen for JS runtime download progress
+    // FFmpeg converter events
+    EventsOn('convert:progress', (job) => {
+        if (!job) return;
+        state.conversion = job;
+        const bar = document.getElementById('convert-progress-bar');
+        if (bar) bar.style.width = job.progress.toFixed(1) + '%';
+        const status = document.getElementById('convert-status');
+        if (status) status.textContent = `Converting... ${job.progress.toFixed(1)}%`;
+        const speed = document.getElementById('convert-speed');
+        if (speed) speed.textContent = job.speed || '';
+        const dur = document.getElementById('convert-duration');
+        if (dur) dur.textContent = job.duration || '';
+
+        if (job.status === 'completed') {
+            addLog(`Conversion complete: ${job.output_file}`);
+            resetConvertUI();
+            const statusEl = document.getElementById('convert-status');
+            if (statusEl) { statusEl.textContent = 'Conversion complete!'; statusEl.classList.add('text-green-400'); }
+        } else if (job.status === 'failed') {
+            addLog(`Conversion failed: ${job.error}`);
+            resetConvertUI();
+        }
+    });
+
+    EventsOn('convert:error', (message) => {
+        addLog(`Conversion error: ${message}`);
+        resetConvertUI();
+    });
+
+    EventsOn('convert:log', (line) => {
+        addVerboseLog(`ffmpeg: ${line}`);
+    });
+
+    EventsOn('ffmpeg:progress', (message) => {
+        addVerboseLog(`ffmpeg download: ${message}`);
+        const el = document.getElementById('ffmpeg-progress');
+        if (el) { el.textContent = message; el.classList.remove('hidden'); }
+    });
+
     EventsOn('jsruntime:progress', (message) => {
-        addLog(`🔧 ${message}`);
+        addVerboseLog(`jsruntime: ${message}`);
         const btn = document.getElementById('download-deno-btn');
         if (btn) {
             btn.textContent = `⏳ ${message}`;
@@ -1471,6 +1919,80 @@ function setupEventListeners() {
     // Start clipboard monitoring
     startClipboardMonitoring();
 }
+
+// Update indicator — shown in the header bar
+function showUpdateChecking() {
+    const el = document.getElementById('update-indicator');
+    if (!el) return;
+    el.innerHTML = `
+        <span class="animate-spin inline-block">♻️</span>
+        <span class="text-gray-400">Checking for updates...</span>
+    `;
+}
+
+function showUpdateAvailable(info) {
+    const el = document.getElementById('update-indicator');
+    if (!el) return;
+    el.innerHTML = `
+        <span class="text-yellow-400">♻️</span>
+        <button id="update-now-btn" class="text-yellow-300 hover:text-yellow-100 underline cursor-pointer bg-transparent border-none text-sm">
+            Update found, click here to update yt-dlp
+        </button>
+    `;
+    document.getElementById('update-now-btn').addEventListener('click', async () => {
+        el.innerHTML = `
+            <span class="animate-spin inline-block">♻️</span>
+            <span class="text-gray-400">Updating yt-dlp...</span>
+        `;
+        try {
+            await App.UpdateYtDlp();
+            addLog('✅ yt-dlp updated successfully');
+            el.innerHTML = `
+                <span class="text-green-400">✓</span>
+                <span class="text-green-400">yt-dlp updated!</span>
+            `;
+            setTimeout(() => { el.innerHTML = ''; }, 5000);
+        } catch (err) {
+            addLog('❌ Update failed: ' + err);
+            el.innerHTML = `
+                <span class="text-red-400">✕</span>
+                <span class="text-red-400">Update failed</span>
+            `;
+        }
+    });
+}
+
+function showNoUpdate() {
+    const el = document.getElementById('update-indicator');
+    if (!el) return;
+    el.innerHTML = `
+        <span class="text-green-400">✓</span>
+        <span class="text-green-400">No updates found</span>
+    `;
+    setTimeout(() => { el.innerHTML = ''; }, 4000);
+}
+
+// Manual check from settings tab — reuses the inline indicator
+window.checkForUpdates = async function() {
+    showUpdateChecking();
+    try {
+        const info = await App.CheckForUpdates();
+        if (info && info.update_available) {
+            showUpdateAvailable(info);
+        } else {
+            showNoUpdate();
+        }
+    } catch (err) {
+        const el = document.getElementById('update-indicator');
+        if (el) {
+            el.innerHTML = `
+                <span class="text-red-400">✕</span>
+                <span class="text-red-400">Check failed</span>
+            `;
+        }
+        addLog('❌ Failed to check for updates: ' + err);
+    }
+};
 
 // Utility functions
 function escapeHtml(text) {
