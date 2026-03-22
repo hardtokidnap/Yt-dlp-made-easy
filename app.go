@@ -214,12 +214,13 @@ func (a *App) DownloadDeno() error {
 	return dl.DownloadDeno()
 }
 
-func (a *App) GetAppInfo() map[string]string {
-	return map[string]string{
-		"app_name":    "YT-DLP Made Easy",
-		"app_version": "2.0.0",
-		"ytdlp_path":  util.YtDlpPath,
-		"config_path": util.AppDataDir,
+func (a *App) GetAppInfo() map[string]interface{} {
+	return map[string]interface{}{
+		"app_name":     util.AppName,
+		"app_version":  util.AppVersion,
+		"ytdlp_path":   util.YtDlpPath,
+		"config_path":  util.AppDataDir,
+		"contributors": util.Contributors,
 	}
 }
 
