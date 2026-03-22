@@ -13,9 +13,19 @@ A modern, lightweight GUI wrapper for [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 - **Concurrent downloads** with configurable queue size
 - **Pause and resume** downloads without losing progress
 - **Real-time progress** with speed and ETA display
+- **Persistent queue** — downloads survive app restarts
 - **Playlist support** with individual item tracking
 - **Quality selection** from 360p to 4K
 - **Audio extraction** with format and quality options
+- **Open Folder** button to reveal downloaded files in your file manager
+
+### Media Conversion
+- **Built-in FFmpeg converter** with automatic FFmpeg download
+- **Quick presets** — Video to MP3, Convert to MP4/MKV/WebM, Extract Audio, FLAC, WAV
+- **Full codec control** — H.264, H.265, VP9, AAC, MP3, Opus, FLAC, and more
+- **Custom FFmpeg arguments** for trimming, filters, and advanced use
+- **Real-time progress** with speed and duration tracking
+- **Convert recent downloads** directly from the queue
 
 ### Smart Error Handling
 - **Automatic error classification** detects 403 blocks, rate limits, age restrictions, and more
@@ -30,13 +40,16 @@ A modern, lightweight GUI wrapper for [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 
 ### Advanced Options
 - **SponsorBlock integration** to skip sponsored segments
-- **Stable/Nightly builds** with automatic updates
+- **Nightly builds by default** with inline update indicator
 - **JavaScript runtime management** (Deno, Node.js, Bun) with bundled Deno download
 - **Custom yt-dlp arguments** with autocomplete suggestions
 - **Clipboard monitoring** for automatic URL detection
+- **Verbose logging** toggle for debugging
 - **Download history** with search, filter, and re-download
+
 > [!NOTE]
-> Download history is currently broken while I work on a solution that can use either sqlite or a simple csv due to bloating possibilites and JSON corruption for users with high usage.
+> Download history is currently broken while I work on a solution that can use either sqlite or a simple csv due to bloating possibilities and JSON corruption for users with high usage.
+
 ---
 
 ## Installation
@@ -86,12 +99,16 @@ cd frontend && npm install && cd ..
 .
 ├── app.go                 # Wails application entry and frontend bindings
 ├── main.go                # Application bootstrap
+├── open_windows.go        # Platform-specific file/folder opening (Windows)
+├── open_darwin.go         # Platform-specific file/folder opening (macOS)
+├── open_linux.go          # Platform-specific file/folder opening (Linux)
 ├── frontend/              # HTML, CSS, JavaScript UI
 │   └── src/
 │       ├── main.js        # Application logic
 │       └── style.css      # Tailwind styles
 └── internal/
     ├── config/            # Settings management
+    ├── converter/         # FFmpeg conversion engine
     ├── downloader/        # Queue, item, args, error handling
     ├── history/           # Download history tracking
     ├── jsruntime/         # JavaScript runtime detection and management
@@ -151,6 +168,7 @@ If you see "Could not copy cookie database":
 | Frontend | HTML5, JavaScript, Tailwind CSS |
 | Framework | [Wails v2](https://wails.io) |
 | Downloader | [yt-dlp](https://github.com/yt-dlp/yt-dlp) |
+| Converter | [FFmpeg](https://ffmpeg.org) (auto-downloaded) |
 
 ---
 
