@@ -67,7 +67,13 @@ func (d *FFmpegDownloader) Download() error {
 		return fmt.Errorf("create temp file: %w", err)
 	}
 	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath)
+	tmpClosed := false
+	defer func() {
+		if !tmpClosed {
+			tmpFile.Close()
+		}
+		os.Remove(tmpPath)
+	}()
 
 	client := &http.Client{Timeout: 5 * time.Minute}
 	resp, err := client.Get(ffmpegDownloadURL)
@@ -106,10 +112,11 @@ func (d *FFmpegDownloader) Download() error {
 	if err := tmpFile.Close(); err != nil {
 		return fmt.Errorf("close temp file: %w", err)
 	}
+	tmpClosed = true
 
 	d.emit("Extracting FFmpeg...")
 
-	if err := d.extractFFmpeg(tmpFile.Name()); err != nil {
+	if err := d.extractFFmpeg(tmpPath); err != nil {
 		return fmt.Errorf("extract ffmpeg: %w", err)
 	}
 
@@ -146,20 +153,29 @@ func (d *FFmpegDownloader) extractFFmpeg(zipPath string) error {
 			return fmt.Errorf("open %s in zip: %w", name, err)
 		}
 
-		dst, err := os.Create(destPath)
+		// Write to a temp file first so a failed extract doesn't leave
+		// a truncated binary that IsFFmpegInstalled treats as valid
+		tmpDest := destPath + ".tmp"
+		dst, err := os.Create(tmpDest)
 		if err != nil {
 			src.Close()
-			return fmt.Errorf("create %s: %w", destPath, err)
+			return fmt.Errorf("create %s: %w", tmpDest, err)
 		}
 
 		if _, err := io.Copy(dst, src); err != nil {
 			dst.Close()
 			src.Close()
+			os.Remove(tmpDest)
 			return fmt.Errorf("extract %s: %w", name, err)
 		}
 
 		dst.Close()
 		src.Close()
+
+		if err := os.Rename(tmpDest, destPath); err != nil {
+			os.Remove(tmpDest)
+			return fmt.Errorf("install %s: %w", name, err)
+		}
 		found++
 
 		if found == 2 {
