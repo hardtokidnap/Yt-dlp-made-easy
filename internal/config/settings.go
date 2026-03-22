@@ -20,12 +20,13 @@ type Settings struct {
 }
 
 type GeneralSettings struct {
-	SaveFolder               string `json:"SaveFolder"`
-	Theme                    string `json:"Theme"` // system, light, dark
-	MaxConcurrentDownloads   int    `json:"MaxConcurrentDownloads"`
-	ClipboardMonitoring      bool   `json:"ClipboardMonitoring"`
-	NotificationsEnabled     bool   `json:"NotificationsEnabled"`
-	CheckUpdatesOnStart      bool   `json:"CheckUpdatesOnStart"`
+	SaveFolder             string `json:"SaveFolder"`
+	Theme                  string `json:"Theme"` // system, light, dark
+	MaxConcurrentDownloads int    `json:"MaxConcurrentDownloads"`
+	ClipboardMonitoring    bool   `json:"ClipboardMonitoring"`
+	NotificationsEnabled   bool   `json:"NotificationsEnabled"`
+	CheckUpdatesOnStart    bool   `json:"CheckUpdatesOnStart"`
+	VerboseLogging         bool   `json:"VerboseLogging"`
 }
 
 type DownloadSettings struct {
@@ -93,7 +94,7 @@ func DefaultSettings() *Settings {
 			PlayerClient:   "default", // default, mweb, web_creator, ios, android
 		},
 		Advanced: AdvancedSettings{
-			UseNightly:     false,
+			UseNightly:     true, // Default to using nightly builds due to issues with stable builds regarding YouTube extraction.
 			OutputTemplate: "%(title)s.%(ext)s",
 			ExtraArgs:      "",
 			JSRuntime:      "auto", // auto-detect, or deno/node/bun
@@ -103,9 +104,7 @@ func DefaultSettings() *Settings {
 
 // Load loads settings from file, creating defaults if needed
 func Load() (*Settings, error) {
-	// Check if file exists
 	if _, err := os.Stat(util.SettingsFile); os.IsNotExist(err) {
-		// Create defaults
 		s := DefaultSettings()
 		if err := s.Save(); err != nil {
 			return nil, err
@@ -113,22 +112,20 @@ func Load() (*Settings, error) {
 		return s, nil
 	}
 
-	// Read file
 	data, err := os.ReadFile(util.SettingsFile)
 	if err != nil {
 		return nil, err
 	}
 
-	// Parse JSON
 	s := &Settings{}
 	if err := json.Unmarshal(data, s); err != nil {
-		// If parse fails, return defaults
+		// Corrupted config — start fresh rather than crash
 		s = DefaultSettings()
 		s.Save()
 		return s, nil
 	}
 
-	// Merge with defaults to ensure all fields exist
+	// Fill in any fields missing from older config versions
 	s.mergeDefaults()
 
 	return s, nil
@@ -139,26 +136,22 @@ func (s *Settings) Save() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Ensure directory exists
 	if err := util.EnsureAppDir(); err != nil {
 		return err
 	}
 
-	// Marshal to JSON
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return err
 	}
 
-	// Write to file
 	return os.WriteFile(util.SettingsFile, data, 0644)
 }
 
-// mergeDefaults ensures all fields have values
+// mergeDefaults backfills zero-valued fields from defaults so
+// configs saved by older app versions gain new settings automatically.
 func (s *Settings) mergeDefaults() {
 	defaults := DefaultSettings()
-
-	// Merge missing fields (simple approach)
 	if s.General.SaveFolder == "" {
 		s.General.SaveFolder = defaults.General.SaveFolder
 	}
