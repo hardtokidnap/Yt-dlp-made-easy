@@ -81,7 +81,6 @@ func (d *Downloader) Start(ctx context.Context) error {
 	d.item.ProcessPID = d.cmd.Process.Pid
 	d.item.SetStatus(StatusDownloading)
 
-	// Stream stdout to log file, frontend, and progress parser
 	go func() {
 		defer stdout.Close()
 		scanner := bufio.NewScanner(stdout)
@@ -95,7 +94,7 @@ func (d *Downloader) Start(ctx context.Context) error {
 		}
 	}()
 
-	// Stream stderr - yt-dlp writes errors here
+	// yt-dlp writes progress and errors to stderr
 	go func() {
 		defer stderr.Close()
 		defer func() {
@@ -251,7 +250,6 @@ func (d *Downloader) parseOutput(line string) {
 		return
 	}
 
-	// Errors come in various formats - capture and classify them
 	if strings.Contains(line, "ERROR:") || strings.Contains(line, "error:") {
 		var errMsg string
 		if idx := strings.Index(line, "ERROR:"); idx != -1 {
@@ -265,13 +263,12 @@ func (d *Downloader) parseOutput(line string) {
 		return
 	}
 
-	// Some failures don't have ERROR: prefix
+	// yt-dlp sometimes reports failures without the ERROR: prefix
 	if strings.Contains(line, "Unable to") {
 		d.item.SetErrorFromString(line)
 		return
 	}
 
-	// HTTP errors sometimes appear without ERROR: prefix
 	if strings.Contains(line, "HTTP Error") || strings.Contains(line, "403") || strings.Contains(line, "429") {
 		d.item.SetErrorFromString(line)
 		return
@@ -279,5 +276,32 @@ func (d *Downloader) parseOutput(line string) {
 
 	if strings.Contains(line, "has already been downloaded") {
 		d.item.Progress = 100
+		alreadyRe := regexp.MustCompile(`\[download\]\s+(.+?)\s+has already been downloaded`)
+		if matches := alreadyRe.FindStringSubmatch(line); matches != nil {
+			d.item.FilePath = strings.TrimSpace(matches[1])
+		}
+		return
+	}
+
+	// Post-processing updates the final file path after merge/convert/move
+	// [Merger] Merging formats into "filename.mp4"
+	mergerRe := regexp.MustCompile(`\[Merger\]\s+Merging formats into "(.+)"`)
+	if matches := mergerRe.FindStringSubmatch(line); matches != nil {
+		d.item.FilePath = strings.TrimSpace(matches[1])
+		return
+	}
+
+	// [ExtractAudio] Destination: filename.mp3
+	extractRe := regexp.MustCompile(`\[ExtractAudio\]\s+Destination:\s+(.+)`)
+	if matches := extractRe.FindStringSubmatch(line); matches != nil {
+		d.item.FilePath = strings.TrimSpace(matches[1])
+		return
+	}
+
+	// [MoveFiles] Moving file "source" to "destination"
+	moveRe := regexp.MustCompile(`\[MoveFiles\]\s+Moving file ".+" to "(.+)"`)
+	if matches := moveRe.FindStringSubmatch(line); matches != nil {
+		d.item.FilePath = strings.TrimSpace(matches[1])
+		return
 	}
 }

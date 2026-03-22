@@ -10,6 +10,18 @@ export function BrowseFolder() {
   return window['go']['main']['App']['BrowseFolder']();
 }
 
+export function BrowseInputFile() {
+  return window['go']['main']['App']['BrowseInputFile']();
+}
+
+export function BrowseOutputFile(arg1) {
+  return window['go']['main']['App']['BrowseOutputFile'](arg1);
+}
+
+export function CancelConversion() {
+  return window['go']['main']['App']['CancelConversion']();
+}
+
 export function CheckForUpdates() {
   return window['go']['main']['App']['CheckForUpdates']();
 }
@@ -30,6 +42,10 @@ export function DownloadDeno() {
   return window['go']['main']['App']['DownloadDeno']();
 }
 
+export function DownloadFFmpeg() {
+  return window['go']['main']['App']['DownloadFFmpeg']();
+}
+
 export function ExportHistory() {
   return window['go']['main']['App']['ExportHistory']();
 }
@@ -40,6 +56,14 @@ export function GetAppInfo() {
 
 export function GetClipboard() {
   return window['go']['main']['App']['GetClipboard']();
+}
+
+export function GetConversionPresets() {
+  return window['go']['main']['App']['GetConversionPresets']();
+}
+
+export function GetFFmpegVersion() {
+  return window['go']['main']['App']['GetFFmpegVersion']();
 }
 
 export function GetHistory(arg1) {
@@ -58,6 +82,10 @@ export function GetQueueStatus() {
   return window['go']['main']['App']['GetQueueStatus']();
 }
 
+export function GetRecentCompletedDownloads() {
+  return window['go']['main']['App']['GetRecentCompletedDownloads']();
+}
+
 export function GetSettings() {
   return window['go']['main']['App']['GetSettings']();
 }
@@ -66,8 +94,16 @@ export function GetYtDlpVersion() {
   return window['go']['main']['App']['GetYtDlpVersion']();
 }
 
+export function IsFFmpegInstalled() {
+  return window['go']['main']['App']['IsFFmpegInstalled']();
+}
+
 export function OpenFile(arg1) {
   return window['go']['main']['App']['OpenFile'](arg1);
+}
+
+export function OpenFileInFolder(arg1) {
+  return window['go']['main']['App']['OpenFileInFolder'](arg1);
 }
 
 export function OpenFolder(arg1) {
@@ -104,6 +140,10 @@ export function ResumeDownload(arg1) {
 
 export function SaveSettings(arg1) {
   return window['go']['main']['App']['SaveSettings'](arg1);
+}
+
+export function StartConversion(arg1) {
+  return window['go']['main']['App']['StartConversion'](arg1);
 }
 
 export function StopAllDownloads() {

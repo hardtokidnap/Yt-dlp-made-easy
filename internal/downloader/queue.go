@@ -2,9 +2,13 @@ package downloader
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"sort"
 	"sync"
 
 	"ytdlp-easy/internal/config"
+	"ytdlp-easy/internal/util"
 )
 
 // Queue coordinates concurrent downloads using a semaphore pattern.
@@ -155,9 +159,9 @@ func (q *Queue) Remove(id string) {
 		delete(q.downloaders, id)
 	}
 	delete(q.items, id)
-	q.mu.Unlock() // Release before callback to avoid deadlock
-
+	q.mu.Unlock() // Release before callback — callbacks may acquire locks
 	q.notifyQueueUpdate()
+	q.Save()
 }
 
 func (q *Queue) GetItem(id string) *Item {
@@ -174,6 +178,10 @@ func (q *Queue) GetAll() []*Item {
 	for _, item := range q.items {
 		items = append(items, item)
 	}
+	// Stable order so UI cards don't jump between updates
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].CreatedAt.Before(items[j].CreatedAt)
+	})
 	return items
 }
 
@@ -252,10 +260,10 @@ func (q *Queue) ClearCompleted() int {
 		}
 	}
 
-	q.mu.Unlock() // Release before callback to avoid deadlock
-
+	q.mu.Unlock() // Release before callback — callbacks may acquire locks
 	if count > 0 {
 		q.notifyQueueUpdate()
+		q.Save()
 	}
 	return count
 }
@@ -277,10 +285,56 @@ func (q *Queue) notifyItemUpdate(item *Item) {
 	if q.OnItemUpdate != nil {
 		q.OnItemUpdate(item)
 	}
+	// Only persist on status transitions, not every progress tick
+	if item.Status != StatusDownloading {
+		q.Save()
+	}
 }
 
 func (q *Queue) notifyQueueUpdate() {
 	if q.OnQueueUpdate != nil {
 		q.OnQueueUpdate()
 	}
+}
+
+// Save persists all queue items to disk so they survive app restarts.
+func (q *Queue) Save() {
+	q.mu.RLock()
+	items := make([]*Item, 0, len(q.items))
+	for _, item := range q.items {
+		items = append(items, item)
+	}
+	q.mu.RUnlock()
+
+	data, err := json.MarshalIndent(items, "", "  ")
+	if err != nil {
+		return
+	}
+	os.WriteFile(util.QueueFile, data, 0644)
+}
+
+// LoadPersistedItems restores queue items from disk. Items that were
+// mid-download when the app closed get reset to stopped since the
+// yt-dlp process no longer exists.
+func (q *Queue) LoadPersistedItems() {
+	data, err := os.ReadFile(util.QueueFile)
+	if err != nil {
+		return
+	}
+
+	var items []*Item
+	if err := json.Unmarshal(data, &items); err != nil {
+		return
+	}
+
+	q.mu.Lock()
+	for _, item := range items {
+		// Process is gone — reset active states
+		switch item.Status {
+		case StatusDownloading, StatusPaused, StatusPending:
+			item.Status = StatusStopped
+		}
+		q.items[item.ID] = item
+	}
+	q.mu.Unlock()
 }
