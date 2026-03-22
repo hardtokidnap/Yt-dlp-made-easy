@@ -69,6 +69,7 @@ export namespace config {
 	    ClipboardMonitoring: boolean;
 	    NotificationsEnabled: boolean;
 	    CheckUpdatesOnStart: boolean;
+	    VerboseLogging: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new GeneralSettings(source);
@@ -82,6 +83,7 @@ export namespace config {
 	        this.ClipboardMonitoring = source["ClipboardMonitoring"];
 	        this.NotificationsEnabled = source["NotificationsEnabled"];
 	        this.CheckUpdatesOnStart = source["CheckUpdatesOnStart"];
+	        this.VerboseLogging = source["VerboseLogging"];
 	    }
 	}
 	export class NetworkSettings {
@@ -139,6 +141,119 @@ export namespace config {
 		    }
 		    return a;
 		}
+	}
+
+}
+
+export namespace converter {
+	
+	export class ConversionJob {
+	    id: string;
+	    input_file: string;
+	    output_file: string;
+	    status: string;
+	    progress: number;
+	    duration: string;
+	    speed: string;
+	    error: string;
+	    // Go type: time
+	    started_at: any;
+	    // Go type: time
+	    finished_at?: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new ConversionJob(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.input_file = source["input_file"];
+	        this.output_file = source["output_file"];
+	        this.status = source["status"];
+	        this.progress = source["progress"];
+	        this.duration = source["duration"];
+	        this.speed = source["speed"];
+	        this.error = source["error"];
+	        this.started_at = this.convertValues(source["started_at"], null);
+	        this.finished_at = this.convertValues(source["finished_at"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class ConversionOptions {
+	    input_file: string;
+	    output_file: string;
+	    output_format: string;
+	    video_codec: string;
+	    audio_codec: string;
+	    preset: string;
+	    video_bitrate: string;
+	    audio_bitrate: string;
+	    resolution: string;
+	    custom_args: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ConversionOptions(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.input_file = source["input_file"];
+	        this.output_file = source["output_file"];
+	        this.output_format = source["output_format"];
+	        this.video_codec = source["video_codec"];
+	        this.audio_codec = source["audio_codec"];
+	        this.preset = source["preset"];
+	        this.video_bitrate = source["video_bitrate"];
+	        this.audio_bitrate = source["audio_bitrate"];
+	        this.resolution = source["resolution"];
+	        this.custom_args = source["custom_args"];
+	    }
+	}
+	export class Preset {
+	    id: string;
+	    name: string;
+	    description: string;
+	    output_format: string;
+	    video_codec: string;
+	    audio_codec: string;
+	    preset: string;
+	    audio_bitrate: string;
+	    audio_only: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new Preset(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.description = source["description"];
+	        this.output_format = source["output_format"];
+	        this.video_codec = source["video_codec"];
+	        this.audio_codec = source["audio_codec"];
+	        this.preset = source["preset"];
+	        this.audio_bitrate = source["audio_bitrate"];
+	        this.audio_only = source["audio_only"];
+	    }
 	}
 
 }
