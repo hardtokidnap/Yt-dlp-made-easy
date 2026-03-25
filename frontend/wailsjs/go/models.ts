@@ -306,6 +306,7 @@ export namespace downloader {
 	    format: string;
 	    current_item: number;
 	    total_items: number;
+	    file_exists: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Item(source);
@@ -333,6 +334,7 @@ export namespace downloader {
 	        this.format = source["format"];
 	        this.current_item = source["current_item"];
 	        this.total_items = source["total_items"];
+	        this.file_exists = source["file_exists"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -371,6 +373,7 @@ export namespace history {
 	    is_audio_only: boolean;
 	    quality: string;
 	    format: string;
+	    hide_in_queue: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Entry(source);
@@ -389,6 +392,7 @@ export namespace history {
 	        this.is_audio_only = source["is_audio_only"];
 	        this.quality = source["quality"];
 	        this.format = source["format"];
+	        this.hide_in_queue = source["hide_in_queue"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -487,20 +491,6 @@ export namespace main {
 	        this.is_audio_only = source["is_audio_only"];
 	        this.quality = source["quality"];
 	        this.format = source["format"];
-	    }
-	}
-	export class HistoryFilter {
-	    query: string;
-	    status: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new HistoryFilter(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.query = source["query"];
-	        this.status = source["status"];
 	    }
 	}
 
