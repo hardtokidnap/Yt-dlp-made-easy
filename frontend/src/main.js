@@ -1709,8 +1709,12 @@ function displayLogs() {
         return;
     }
 
+    // Only auto-scroll if user is already near the bottom
+    const atBottom = output.scrollHeight - output.scrollTop - output.clientHeight < 40;
     output.innerHTML = state.logs.map(log => escapeHtml(log)).join('<br>');
-    output.scrollTop = output.scrollHeight;
+    if (atBottom) {
+        output.scrollTop = output.scrollHeight;
+    }
 }
 
 window.clearLogs = function() {
