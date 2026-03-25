@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -228,13 +229,7 @@ func (d *Downloader) parseOutput(line string) {
 	// Destination: [download] Destination: filename.mp4
 	destRe := regexp.MustCompile(`\[download\]\s+Destination:\s+(.+)`)
 	if matches := destRe.FindStringSubmatch(line); matches != nil {
-		d.item.FilePath = strings.TrimSpace(matches[1])
-		if d.item.Title == "" {
-			title := strings.TrimSuffix(matches[1], ".mp4")
-			title = strings.TrimSuffix(title, ".webm")
-			title = strings.TrimSuffix(title, ".mkv")
-			d.item.Title = title
-		}
+		d.setFileInfo(strings.TrimSpace(matches[1]))
 		return
 	}
 
@@ -278,7 +273,7 @@ func (d *Downloader) parseOutput(line string) {
 		d.item.Progress = 100
 		alreadyRe := regexp.MustCompile(`\[download\]\s+(.+?)\s+has already been downloaded`)
 		if matches := alreadyRe.FindStringSubmatch(line); matches != nil {
-			d.item.FilePath = strings.TrimSpace(matches[1])
+			d.setFileInfo(strings.TrimSpace(matches[1]))
 		}
 		return
 	}
@@ -287,21 +282,30 @@ func (d *Downloader) parseOutput(line string) {
 	// [Merger] Merging formats into "filename.mp4"
 	mergerRe := regexp.MustCompile(`\[Merger\]\s+Merging formats into "(.+)"`)
 	if matches := mergerRe.FindStringSubmatch(line); matches != nil {
-		d.item.FilePath = strings.TrimSpace(matches[1])
+		d.setFileInfo(strings.TrimSpace(matches[1]))
 		return
 	}
 
 	// [ExtractAudio] Destination: filename.mp3
 	extractRe := regexp.MustCompile(`\[ExtractAudio\]\s+Destination:\s+(.+)`)
 	if matches := extractRe.FindStringSubmatch(line); matches != nil {
-		d.item.FilePath = strings.TrimSpace(matches[1])
+		d.setFileInfo(strings.TrimSpace(matches[1]))
 		return
 	}
 
 	// [MoveFiles] Moving file "source" to "destination"
 	moveRe := regexp.MustCompile(`\[MoveFiles\]\s+Moving file ".+" to "(.+)"`)
 	if matches := moveRe.FindStringSubmatch(line); matches != nil {
-		d.item.FilePath = strings.TrimSpace(matches[1])
+		d.setFileInfo(strings.TrimSpace(matches[1]))
 		return
+	}
+}
+
+// setFileInfo sets the file path and extracts a title from the filename.
+func (d *Downloader) setFileInfo(path string) {
+	d.item.FilePath = path
+	if d.item.Title == "" {
+		name := filepath.Base(path)
+		d.item.Title = strings.TrimSuffix(name, filepath.Ext(name))
 	}
 }
