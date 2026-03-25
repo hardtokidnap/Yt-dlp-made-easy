@@ -147,11 +147,9 @@ func BuildArgs(opts ConversionOptions) []string {
 		args = append(args, "-vf", "scale="+opts.Resolution)
 	}
 
-	// Custom args (split on spaces, respecting the user's intent)
+	// Custom args — split on spaces but respect quoted values
 	if opts.CustomArgs != "" {
-		for _, arg := range strings.Fields(opts.CustomArgs) {
-			args = append(args, arg)
-		}
+		args = append(args, splitArgs(opts.CustomArgs)...)
 	}
 
 	// Output file — derive from input if not specified
@@ -166,5 +164,38 @@ func BuildArgs(opts ConversionOptions) []string {
 	}
 	args = append(args, output)
 
+	return args
+}
+
+// splitArgs splits a string into arguments, respecting single and double quotes.
+// e.g. `-metadata title="My Video" -ss 00:01:00` → ["-metadata", "title=My Video", "-ss", "00:01:00"]
+func splitArgs(s string) []string {
+	var args []string
+	var cur []byte
+	var quote byte
+
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			} else {
+				cur = append(cur, c)
+			}
+		case c == '"' || c == '\'':
+			quote = c
+		case c == ' ' || c == '\t':
+			if len(cur) > 0 {
+				args = append(args, string(cur))
+				cur = cur[:0]
+			}
+		default:
+			cur = append(cur, c)
+		}
+	}
+	if len(cur) > 0 {
+		args = append(args, string(cur))
+	}
 	return args
 }
