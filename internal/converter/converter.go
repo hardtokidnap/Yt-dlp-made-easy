@@ -69,12 +69,14 @@ func (c *Converter) Start(ctx context.Context, opts ConversionOptions) error {
 		return fmt.Errorf("start ffmpeg: %w", err)
 	}
 
-	// Parse stderr in a goroutine, synchronized so we don't lose output if ffmpeg exits fast
+	// Parse stderr in a goroutine, synchronized so we don't lose output if ffmpeg exits fast.
+	// FFmpeg uses \r to overwrite progress lines in-place, so we split on both \r and \n.
 	stderrDone := make(chan struct{})
 	go func() {
 		defer close(stderrDone)
 		scanner := bufio.NewScanner(stderr)
 		scanner.Buffer(make([]byte, 64*1024), 64*1024)
+		scanner.Split(scanCRLF)
 		for scanner.Scan() {
 			line := scanner.Text()
 			c.emitLog(line)
@@ -124,10 +126,10 @@ func (c *Converter) Job() *ConversionJob {
 }
 
 var (
-	// "  Duration: 00:03:45.12, ..."
-	durationRe = regexp.MustCompile(`Duration:\s+(\d{2}):(\d{2}):(\d{2})\.(\d{2})`)
+	// "  Duration: 00:03:45.12, ..." — fractional part varies across FFmpeg builds (1-3 digits)
+	durationRe = regexp.MustCompile(`Duration:\s+(\d{2}):(\d{2}):(\d{2})\.(\d+)`)
 	// "frame=  123 ... time=00:01:23.45 ... speed=2.1x"
-	timeRe  = regexp.MustCompile(`time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})`)
+	timeRe  = regexp.MustCompile(`time=(\d{2}):(\d{2}):(\d{2})\.(\d+)`)
 	speedRe = regexp.MustCompile(`speed=\s*([\d.]+)x`)
 )
 
@@ -173,13 +175,37 @@ func (c *Converter) emitLog(line string) {
 	}
 }
 
-// parseDuration converts regex match groups [full, HH, MM, SS, cc] to seconds.
+// parseDuration converts regex match groups [full, HH, MM, SS, frac] to seconds.
+// The fractional part can be 1-3 digits depending on the FFmpeg build.
 func parseDuration(m []string) float64 {
 	h, _ := strconv.ParseFloat(m[1], 64)
 	min, _ := strconv.ParseFloat(m[2], 64)
 	s, _ := strconv.ParseFloat(m[3], 64)
-	cs, _ := strconv.ParseFloat(m[4], 64)
-	return h*3600 + min*60 + s + cs/100
+	frac, _ := strconv.ParseFloat("0."+m[4], 64)
+	return h*3600 + min*60 + s + frac
+}
+
+// scanCRLF splits on \n, \r\n, or bare \r so FFmpeg's carriage-return
+// progress updates are delivered as individual lines instead of buffering.
+func scanCRLF(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if atEOF && len(data) == 0 {
+		return 0, nil, nil
+	}
+	for i := 0; i < len(data); i++ {
+		if data[i] == '\n' {
+			return i + 1, data[:i], nil
+		}
+		if data[i] == '\r' {
+			if i+1 < len(data) && data[i+1] == '\n' {
+				return i + 2, data[:i], nil
+			}
+			return i + 1, data[:i], nil
+		}
+	}
+	if atEOF {
+		return len(data), data, nil
+	}
+	return 0, nil, nil
 }
 
 func formatDuration(secs float64) string {

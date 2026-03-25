@@ -950,6 +950,8 @@ function resetConvertUI() {
     if (startBtn) startBtn.classList.remove('hidden');
     const progressDiv = document.getElementById('convert-progress');
     if (progressDiv) progressDiv.classList.add('hidden');
+    const resultDiv = document.getElementById('convert-result');
+    if (resultDiv) resultDiv.remove();
     const bar = document.getElementById('convert-progress-bar');
     if (bar) bar.style.width = '0%';
     const status = document.getElementById('convert-status');
@@ -962,6 +964,60 @@ function resetConvertUI() {
     const duration = document.getElementById('convert-duration');
     if (duration) duration.textContent = '';
 }
+
+function showConvertResult(status, detail) {
+    const progressDiv = document.getElementById('convert-progress');
+    if (progressDiv) progressDiv.classList.add('hidden');
+    const startBtn = document.getElementById('convert-start-btn');
+    if (startBtn) startBtn.classList.add('hidden');
+
+    // Remove any previous result
+    const prev = document.getElementById('convert-result');
+    if (prev) prev.remove();
+
+    const container = document.getElementById('convert-action');
+    if (!container) return;
+
+    const isSuccess = status === 'completed';
+    const resultHtml = isSuccess
+        ? `<div id="convert-result" class="space-y-3">
+               <div class="flex items-center gap-2 text-green-400 font-medium">
+                   <span>✓</span> Conversion complete!
+               </div>
+               <div class="text-sm text-gray-400 truncate" title="${escapeHtml(detail)}">${escapeHtml(detail)}</div>
+               <div class="flex gap-2">
+                   <button onclick="window.openConvertOutput()" class="btn-secondary flex-1">
+                       📂 Open in Folder
+                   </button>
+                   <button onclick="resetConvertUI()" class="btn-primary flex-1">
+                       🔄 Convert Another
+                   </button>
+               </div>
+           </div>`
+        : `<div id="convert-result" class="space-y-3">
+               <div class="flex items-center gap-2 text-red-400 font-medium">
+                   <span>✕</span> Conversion failed
+               </div>
+               <div class="text-sm text-gray-400 bg-gray-800/50 rounded p-2 font-mono break-all">${escapeHtml(detail)}</div>
+               <button onclick="resetConvertUI()" class="btn-primary w-full">
+                   Try Again
+               </button>
+           </div>`;
+
+    container.insertAdjacentHTML('beforeend', resultHtml);
+
+    if (isSuccess) {
+        state._lastConvertOutput = detail;
+    }
+}
+
+window.openConvertOutput = function() {
+    if (state._lastConvertOutput) {
+        App.OpenFileInFolder(state._lastConvertOutput).catch(err => {
+            addLog(`Failed to open output folder: ${err}`);
+        });
+    }
+};
 
 // History Tab
 function renderHistoryTab() {
@@ -1898,16 +1954,11 @@ function setupEventListeners() {
         if (job.status === 'completed') {
             state.conversion = null;
             addLog(`Conversion complete: ${job.output_file}`);
-            // Show completion message before resetting so the user sees it
-            const statusEl = document.getElementById('convert-status');
-            if (statusEl) { statusEl.textContent = 'Conversion complete!'; statusEl.classList.add('text-green-400'); }
-            setTimeout(resetConvertUI, 3000);
+            showConvertResult('completed', job.output_file);
         } else if (job.status === 'failed') {
             state.conversion = null;
             addLog(`Conversion failed: ${job.error}`);
-            const statusEl = document.getElementById('convert-status');
-            if (statusEl) { statusEl.textContent = `Failed: ${job.error}`; statusEl.classList.add('text-red-400'); }
-            setTimeout(resetConvertUI, 3000);
+            showConvertResult('failed', job.error);
         }
     });
 
