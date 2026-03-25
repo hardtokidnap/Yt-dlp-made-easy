@@ -25,6 +25,7 @@ type Entry struct {
 	IsAudioOnly bool      `json:"is_audio_only"`
 	Quality     string    `json:"quality"`
 	Format      string    `json:"format"`
+	HideInQueue bool      `json:"hide_in_queue"`
 }
 
 // History persists download records to a JSON Lines file for crash-safe appends.
@@ -103,10 +104,26 @@ func (h *History) Add(entry Entry) error {
 	return err
 }
 
+func (h *History) GetRecent(limit int) []Entry {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	results := make([]Entry, 0, limit)
+	for i := len(h.entries) - 1; i >= 0 && len(results) < limit; i-- {
+		if !h.entries[i].HideInQueue {
+			results = append(results, h.entries[i])
+		}
+	}
+	return results
+}
+
 func (h *History) GetAll() []Entry {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
+	if len(h.entries) == 0 {
+		return make([]Entry, 0)
+	}
 	result := make([]Entry, len(h.entries))
 	for i, entry := range h.entries {
 		result[len(h.entries)-1-i] = entry // Newest first
@@ -119,7 +136,7 @@ func (h *History) Search(query, status string) []Entry {
 	defer h.mu.RUnlock()
 
 	queryLower := strings.ToLower(query)
-	var results []Entry
+	results := make([]Entry, 0)
 
 	for i := len(h.entries) - 1; i >= 0; i-- {
 		entry := h.entries[i]
@@ -183,6 +200,19 @@ func (h *History) ClearOld(days int) (int, error) {
 	}
 
 	return removed, nil
+}
+
+func (h *History) HideFromQueue(id string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	for i := range h.entries {
+		if h.entries[i].ID == id {
+			h.entries[i].HideInQueue = true
+			return h.rewriteFile()
+		}
+	}
+	return nil
 }
 
 func (h *History) Remove(id string) error {

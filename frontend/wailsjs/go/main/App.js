@@ -66,8 +66,8 @@ export function GetFFmpegVersion() {
   return window['go']['main']['App']['GetFFmpegVersion']();
 }
 
-export function GetHistory(arg1) {
-  return window['go']['main']['App']['GetHistory'](arg1);
+export function GetHistory(arg1, arg2) {
+  return window['go']['main']['App']['GetHistory'](arg1, arg2);
 }
 
 export function GetHistoryStats() {
@@ -86,12 +86,20 @@ export function GetRecentCompletedDownloads() {
   return window['go']['main']['App']['GetRecentCompletedDownloads']();
 }
 
+export function GetRecentHistory(arg1) {
+  return window['go']['main']['App']['GetRecentHistory'](arg1);
+}
+
 export function GetSettings() {
   return window['go']['main']['App']['GetSettings']();
 }
 
 export function GetYtDlpVersion() {
   return window['go']['main']['App']['GetYtDlpVersion']();
+}
+
+export function HideFromQueue(arg1) {
+  return window['go']['main']['App']['HideFromQueue'](arg1);
 }
 
 export function IsFFmpegInstalled() {
@@ -128,6 +136,10 @@ export function RedownloadFromHistory(arg1) {
 
 export function RemoveDownload(arg1) {
   return window['go']['main']['App']['RemoveDownload'](arg1);
+}
+
+export function RemoveHistoryEntry(arg1) {
+  return window['go']['main']['App']['RemoveHistoryEntry'](arg1);
 }
 
 export function ResumeAllDownloads() {

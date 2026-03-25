@@ -40,6 +40,7 @@ type Item struct {
 	Format        string     `json:"format"`
 	CurrentItem   int        `json:"current_item"` // For playlists
 	TotalItems    int        `json:"total_items"`
+	FileExists    bool       `json:"file_exists"`
 	ProcessPID    int        `json:"-"` // Not serialized
 }
 
@@ -55,6 +56,7 @@ func NewItem(url string, isAudioOnly bool, quality, format string) *Item {
 		Format:      format,
 		CurrentItem: 1,
 		TotalItems:  1,
+		FileExists:  true,
 	}
 }
 
@@ -70,6 +72,7 @@ func (i *Item) SetStatus(status Status) {
 	case StatusCompleted:
 		i.Progress = 100
 		i.CompletedAt = &now
+		i.FileExists = true
 	}
 }
 

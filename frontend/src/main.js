@@ -7,6 +7,7 @@ const state = {
     currentTab: 'download',
     downloads: {},
     history: [],
+    recentHistory: [],
     settings: null,
     logs: [],
     conversion: null,
@@ -28,8 +29,10 @@ async function init() {
     setupEventListeners(); // Set up listeners first
     await loadSettings();
     await loadQueueStatus(); // Load any existing downloads
+    await loadRecentHistory();
     switchTab('download');
 }
+
 
 // Load current queue status
 async function loadQueueStatus() {
@@ -45,6 +48,14 @@ async function loadQueueStatus() {
         }
     } catch (err) {
         console.error('Failed to load queue status:', err);
+    }
+}
+
+async function loadRecentHistory() {
+    try {
+        state.recentHistory = await App.GetRecentHistory(3) || [];
+    } catch (_) {
+        state.recentHistory = [];
     }
 }
 
@@ -228,24 +239,71 @@ async function displaySavePath() {
     }
 }
 
-// Update download queue display
+// Update download queue display — active items from queue, recent from history
 function updateDownloadQueue() {
     const queue = document.getElementById('download-queue');
     if (!queue) return;
 
-    const downloads = Object.values(state.downloads);
-    if (downloads.length === 0) {
-        queue.innerHTML = '<p class="text-gray-400 text-center py-8">No active downloads</p>';
-        return;
-    }
+    const active = Object.values(state.downloads);
 
-    queue.innerHTML = downloads.map(item => {
-        // Check if this is an error state
-        if (item.status === 'error') {
-            return renderErrorCard(item);
-        }
+    let html = active.map(item => {
+        if (item.status === 'error') return renderErrorCard(item);
         return renderDownloadCard(item);
     }).join('');
+
+    const recent = state.recentHistory || [];
+    if (recent.length > 0) {
+        html += recent.map(entry => renderHistoryCard(entry)).join('');
+    }
+
+    if (!html) {
+        queue.innerHTML = '<p class="text-gray-400 text-center py-8">No downloads yet</p>';
+        return;
+    }
+    queue.innerHTML = html;
+}
+
+function renderHistoryCard(entry) {
+    const badge = entry.is_audio_only
+        ? '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-900/50 text-purple-300 border border-purple-700/50">🎵 Audio</span>'
+        : '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-900/50 text-blue-300 border border-blue-700/50">🎬 Video</span>';
+
+    const isError = entry.status === 'error';
+    const title = entry.title || '';
+
+    return `
+        <div class="bg-gray-700 rounded-lg p-4 space-y-2${isError ? ' border border-red-800/50' : ''}">
+            <div class="flex justify-between items-start">
+                <div class="flex-1 min-w-0 mr-4">
+                    <div class="flex items-center gap-2 min-w-0">
+                        ${badge}
+                        <span class="font-medium truncate">${escapeHtml(title || entry.url)}</span>
+                    </div>
+                    ${title && entry.url ? `
+                        <div class="text-xs text-gray-500 truncate cursor-pointer hover:text-blue-400 mt-1"
+                             onclick="window.openURL('${escapeHtml(entry.url)}')">${escapeHtml(entry.url)}</div>
+                    ` : ''}
+                </div>
+                <div class="flex items-center space-x-2 shrink-0">
+                    ${!isError && entry.file_path ? `
+                        <button onclick="window.openFile('${escapeHtml(entry.file_path)}')" class="btn-secondary text-xs">
+                            📂 Open Folder
+                        </button>
+                    ` : ''}
+                    ${entry.url ? `
+                        <button onclick="window.redownload('${escapeHtml(entry.url)}')" class="btn-secondary text-xs">
+                            🔄 Re-download
+                        </button>
+                    ` : ''}
+                    <button onclick="window.hideFromQueue('${entry.id}')" class="text-gray-500 hover:text-gray-300 text-lg leading-none" title="Dismiss">✕</button>
+                </div>
+            </div>
+            <div class="flex justify-between text-sm text-gray-300">
+                <span>${isError ? `<span class="text-red-400">Error: ${escapeHtml(entry.error || 'Unknown')}</span>` : '<span class="text-green-400">Completed</span>'}</span>
+                <span class="text-gray-500 text-xs">${entry.date ? new Date(entry.date).toLocaleString() : ''}</span>
+            </div>
+        </div>
+    `;
 }
 
 // Render a normal download card
@@ -254,16 +312,24 @@ function renderDownloadCard(item) {
         ? '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-900/50 text-purple-300 border border-purple-700/50">🎵 Audio</span>'
         : '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-900/50 text-blue-300 border border-blue-700/50">🎬 Video</span>';
 
+    const fileMissing = item.status === 'completed' && item.file_path && item.file_exists === false;
+    const isDone = item.status === 'completed' || item.status === 'stopped';
+    const title = item.title || '';
+
     return `
-        <div class="bg-gray-700 rounded-lg p-4 space-y-2">
+        <div class="bg-gray-700 rounded-lg p-4 space-y-2${fileMissing ? ' opacity-50' : ''}">
             <div class="flex justify-between items-start">
-                <div class="flex-1 mr-4">
-                    <div class="flex items-center gap-2">
+                <div class="flex-1 min-w-0 mr-4">
+                    <div class="flex items-center gap-2 min-w-0">
                         ${badge}
-                        <span class="font-medium truncate">${escapeHtml(item.title || item.url)}</span>
+                        <span class="font-medium truncate">${escapeHtml(title || item.url)}</span>
                     </div>
+                    ${title && item.url ? `
+                        <div class="text-xs text-gray-500 truncate cursor-pointer hover:text-blue-400 mt-1"
+                             onclick="window.openURL('${escapeHtml(item.url)}')">${escapeHtml(item.url)}</div>
+                    ` : ''}
                 </div>
-                <div class="flex items-center space-x-2">
+                <div class="flex items-center space-x-2 shrink-0">
                     ${item.status === 'downloading' ? `
                         <button onclick="window.pauseDownload('${item.id}')" class="btn-secondary text-xs">
                             ⏸️ Pause
@@ -279,12 +345,20 @@ function renderDownloadCard(item) {
                             ⏹️ Stop
                         </button>
                     ` : ''}
-                    ${item.status === 'completed' && item.file_path ? `
+                    ${item.status === 'completed' && item.file_path && !fileMissing ? `
                         <button onclick="window.openFileInFolder('${item.id}')" class="btn-secondary text-xs">
                             📂 Open Folder
                         </button>
                     ` : ''}
-                    ${item.status === 'completed' || item.status === 'stopped' ? `
+                    ${fileMissing ? `
+                        <span class="text-xs text-gray-500 italic">File missing</span>
+                    ` : ''}
+                    ${isDone && item.url ? `
+                        <button onclick="window.redownload('${escapeHtml(item.url)}')" class="btn-secondary text-xs">
+                            🔄 Re-download
+                        </button>
+                    ` : ''}
+                    ${isDone ? `
                         <button onclick="window.removeFromQueue('${item.id}')" class="text-gray-500 hover:text-gray-300 text-lg leading-none" title="Remove from queue">✕</button>
                     ` : ''}
                 </div>
@@ -443,15 +517,16 @@ window.dismissError = window.removeFromQueue;
 // Clear all completed/stopped/error items from the queue
 window.clearQueue = async function() {
     try {
-        const count = await App.ClearCompletedDownloads();
-        Object.keys(state.downloads).forEach(id => {
-            const item = state.downloads[id];
-            if (item.status === 'completed' || item.status === 'error' || item.status === 'stopped') {
-                delete state.downloads[id];
-            }
-        });
+        // Hide all visible history items from queue display
+        for (const entry of state.recentHistory) {
+            await App.HideFromQueue(entry.id);
+        }
+        // Also clear any stopped items from the active queue
+        await App.ClearCompletedDownloads();
+        state.downloads = {};
+        await loadRecentHistory();
         updateDownloadQueue();
-        addLog(`Cleared ${count} items from queue`);
+        addLog('Queue cleared');
     } catch (err) {
         addLog(`⚠️ Failed to clear queue: ${err}`);
     }
@@ -1057,7 +1132,7 @@ function renderHistoryTab() {
 
 window.refreshHistory = async function() {
     try {
-        state.history = await App.GetHistory("");
+        state.history = await App.GetHistory("", "") || [];
         displayHistory();
     } catch (err) {
         console.error('Failed to load history:', err);
@@ -1092,20 +1167,24 @@ function displayHistory() {
             <div class="flex-1 min-w-0">
                 <div class="font-medium truncate cursor-pointer hover:text-blue-400"
                      onclick="window.openFile('${escapeHtml(item.file_path)}')">
-                    ${escapeHtml(item.title)}
+                    ${escapeHtml(item.title || item.url)}
                 </div>
-                <div class="text-sm text-gray-400 truncate cursor-pointer hover:text-blue-400"
-                     onclick="window.openURL('${escapeHtml(item.url)}')">
-                    ${escapeHtml(item.url)}
-                </div>
+                ${item.title ? `
+                    <div class="text-sm text-gray-400 truncate cursor-pointer hover:text-blue-400"
+                         onclick="window.openURL('${escapeHtml(item.url)}')">
+                        ${escapeHtml(item.url)}
+                    </div>
+                ` : ''}
                 <div class="text-xs text-gray-500 mt-1">
                     ${new Date(item.date).toLocaleString()} • ${item.status}
                 </div>
             </div>
-            <button onclick="window.redownload('${escapeHtml(item.url)}')"
-                    class="btn-secondary text-sm ml-4">
-                ⬇️ Re-download
-            </button>
+            <div class="flex items-center space-x-2 shrink-0 ml-4">
+                <button onclick="window.redownload('${escapeHtml(item.url)}')" class="btn-secondary text-sm">
+                    ⬇️ Re-download
+                </button>
+                <button onclick="window.removeHistoryEntry('${item.id}')" class="text-gray-500 hover:text-red-400 text-lg leading-none" title="Delete">🗑️</button>
+            </div>
         </div>
     `).join('');
 }
@@ -1119,6 +1198,24 @@ window.clearHistory = async function() {
         displayHistory();
     } catch (err) {
         alert('Failed to clear history: ' + err);
+    }
+};
+
+window.hideFromQueue = async function(id) {
+    try {
+        await App.HideFromQueue(id);
+    } catch (err) {
+        addLog(`Failed to hide from queue: ${err}`);
+    }
+};
+
+window.removeHistoryEntry = async function(id) {
+    try {
+        await App.RemoveHistoryEntry(id);
+        state.history = state.history.filter(h => h.id !== id);
+        displayHistory();
+    } catch (err) {
+        addLog(`Failed to remove history entry: ${err}`);
     }
 };
 
@@ -1900,6 +1997,13 @@ function setupEventListeners() {
             if (state.currentTab === 'download') {
                 updateDownloadQueue();
             }
+        }
+    });
+
+    EventsOn('history:update', (entries) => {
+        state.recentHistory = entries || [];
+        if (state.currentTab === 'download') {
+            updateDownloadQueue();
         }
     });
 
