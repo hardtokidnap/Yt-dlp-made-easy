@@ -281,17 +281,17 @@ function renderHistoryCard(entry) {
                     </div>
                     ${title && entry.url ? `
                         <div class="text-xs text-gray-500 truncate cursor-pointer hover:text-blue-400 mt-1"
-                             onclick="window.openURL('${escapeHtml(entry.url)}')">${escapeHtml(entry.url)}</div>
+                             onclick="window.openURL('${escapeJsStr(entry.url)}')">${escapeHtml(entry.url)}</div>
                     ` : ''}
                 </div>
                 <div class="flex items-center space-x-2 shrink-0">
                     ${!isError && entry.file_path ? `
-                        <button onclick="window.openFile('${escapeHtml(entry.file_path)}')" class="btn-secondary text-xs">
+                        <button onclick="window.openFile('${escapeJsStr(entry.file_path)}')" class="btn-secondary text-xs">
                             📂 Open Folder
                         </button>
                     ` : ''}
                     ${entry.url ? `
-                        <button onclick="window.redownload('${escapeHtml(entry.url)}')" class="btn-secondary text-xs">
+                        <button onclick="window.redownload('${escapeJsStr(entry.url)}')" class="btn-secondary text-xs">
                             🔄 Re-download
                         </button>
                     ` : ''}
@@ -326,7 +326,7 @@ function renderDownloadCard(item) {
                     </div>
                     ${title && item.url ? `
                         <div class="text-xs text-gray-500 truncate cursor-pointer hover:text-blue-400 mt-1"
-                             onclick="window.openURL('${escapeHtml(item.url)}')">${escapeHtml(item.url)}</div>
+                             onclick="window.openURL('${escapeJsStr(item.url)}')">${escapeHtml(item.url)}</div>
                     ` : ''}
                 </div>
                 <div class="flex items-center space-x-2 shrink-0">
@@ -354,7 +354,7 @@ function renderDownloadCard(item) {
                         <span class="text-xs text-gray-500 italic">File missing</span>
                     ` : ''}
                     ${isDone && item.url ? `
-                        <button onclick="window.redownload('${escapeHtml(item.url)}')" class="btn-secondary text-xs">
+                        <button onclick="window.redownload('${escapeJsStr(item.url)}')" class="btn-secondary text-xs">
                             🔄 Re-download
                         </button>
                     ` : ''}
@@ -428,7 +428,7 @@ function renderErrorCard(item) {
                     <div class="flex flex-wrap gap-2">
                         ${topSuggestions.map((s, i) => `
                             <button
-                                onclick="window.applySuggestion('${itemId}', '${s.id}', '${escapeHtml(s.action)}', '${escapeHtml(s.action_data || '')}')"
+                                onclick="window.applySuggestion('${itemId}', '${s.id}', '${escapeJsStr(s.action)}', '${escapeJsStr(s.action_data || '')}')"
                                 class="${i === 0 ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-600 hover:bg-gray-500'} text-white text-sm px-3 py-1.5 rounded transition-colors"
                                 title="${escapeHtml(s.description)}"
                             >
@@ -450,7 +450,7 @@ function renderErrorCard(item) {
                             <div class="flex flex-wrap gap-2 mt-2">
                                 ${moreSuggestions.map(s => `
                                     <button
-                                        onclick="window.applySuggestion('${itemId}', '${s.id}', '${escapeHtml(s.action)}', '${escapeHtml(s.action_data || '')}')"
+                                        onclick="window.applySuggestion('${itemId}', '${s.id}', '${escapeJsStr(s.action)}', '${escapeJsStr(s.action_data || '')}')"
                                         class="bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm px-3 py-1.5 rounded transition-colors"
                                         title="${escapeHtml(s.description)}"
                                     >
@@ -1020,6 +1020,7 @@ window.cancelConversion = async function() {
     }
 };
 
+window.resetConvertUI = resetConvertUI;
 function resetConvertUI() {
     const startBtn = document.getElementById('convert-start-btn');
     if (startBtn) startBtn.classList.remove('hidden');
@@ -1166,12 +1167,12 @@ function displayHistory() {
         <div class="bg-gray-700 rounded p-3 flex justify-between items-center hover:bg-gray-600 transition-colors">
             <div class="flex-1 min-w-0">
                 <div class="font-medium truncate cursor-pointer hover:text-blue-400"
-                     onclick="window.openFile('${escapeHtml(item.file_path)}')">
+                     onclick="window.openFile('${escapeJsStr(item.file_path)}')">
                     ${escapeHtml(item.title || item.url)}
                 </div>
                 ${item.title ? `
                     <div class="text-sm text-gray-400 truncate cursor-pointer hover:text-blue-400"
-                         onclick="window.openURL('${escapeHtml(item.url)}')">
+                         onclick="window.openURL('${escapeJsStr(item.url)}')">
                         ${escapeHtml(item.url)}
                     </div>
                 ` : ''}
@@ -1180,7 +1181,7 @@ function displayHistory() {
                 </div>
             </div>
             <div class="flex items-center space-x-2 shrink-0 ml-4">
-                <button onclick="window.redownload('${escapeHtml(item.url)}')" class="btn-secondary text-sm">
+                <button onclick="window.redownload('${escapeJsStr(item.url)}')" class="btn-secondary text-sm">
                     ⬇️ Re-download
                 </button>
                 <button onclick="window.removeHistoryEntry('${item.id}')" class="text-gray-500 hover:text-red-400 text-lg leading-none" title="Delete">🗑️</button>
@@ -2177,6 +2178,12 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// Escape for use inside JS string literals in onclick handlers
+function escapeJsStr(str) {
+    if (!str) return '';
+    return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
 // Custom context menu for text inputs

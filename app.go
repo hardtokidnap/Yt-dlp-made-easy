@@ -41,6 +41,13 @@ func (a *App) startup(ctx context.Context) {
 	}
 	a.settings = settings
 
+	// History must init before queue — the OnItemUpdate callback references a.history
+	hist, err := history.NewHistory()
+	if err != nil {
+		hist = &history.History{}
+	}
+	a.history = hist
+
 	a.queue = downloader.NewQueue(settings)
 	a.queue.LoadPersistedItems()
 	a.queue.OnItemUpdate = func(item *downloader.Item) {
@@ -74,12 +81,6 @@ func (a *App) startup(ctx context.Context) {
 			"line": line,
 		})
 	}
-
-	hist, err := history.NewHistory()
-	if err != nil {
-		hist = &history.History{}
-	}
-	a.history = hist
 
 	a.updater = updater.NewUpdater(settings.Advanced.UseNightly)
 	a.updater.OnProgress = func(msg string) {
