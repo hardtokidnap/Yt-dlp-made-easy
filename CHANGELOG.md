@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [V3.1.0] - 2026-03-26
+
 ### Added
 - Download queue now persists across app restarts — your queue is saved to disk and restored on launch
 - "Open Folder" button on completed downloads opens the file manager and highlights the file
@@ -27,6 +29,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Queue now holds only active downloads — completed/errored items move to history automatically ([#12](https://github.com/hardtokidnap/Yt-dlp-made-easy/pull/12))
 - Download tab shows active queue plus 3 most recent history entries ([#12](https://github.com/hardtokidnap/Yt-dlp-made-easy/pull/12))
 - Converter completion now shows a persistent result panel with "Open in Folder" / "Convert Another" instead of a 3-second auto-dismiss ([#8](https://github.com/hardtokidnap/Yt-dlp-made-easy/pull/8))
+- Regex patterns compiled once at package level instead of per yt-dlp output line ([#14](https://github.com/hardtokidnap/Yt-dlp-made-easy/pull/14))
+- History mutations roll back in-memory state on disk write failure ([#14](https://github.com/hardtokidnap/Yt-dlp-made-easy/pull/14))
 
 ### Fixed
 - Shell/console windows no longer flash on screen during background operations (downloads, updates, runtime checks)
@@ -37,6 +41,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Log panel no longer jumps to bottom while scrolling through earlier entries ([#10](https://github.com/hardtokidnap/Yt-dlp-made-easy/pull/10))
 - Title extraction now works for all yt-dlp output formats (Merger, ExtractAudio, MoveFiles, already downloaded) ([#11](https://github.com/hardtokidnap/Yt-dlp-made-easy/pull/11))
 - Fixed nil slice → JSON null crash when history is empty ([#12](https://github.com/hardtokidnap/Yt-dlp-made-easy/pull/12))
+- XSS via special characters in URL/path onclick handlers — proper JS string escaping ([#14](https://github.com/hardtokidnap/Yt-dlp-made-easy/pull/14))
+- `resetConvertUI` not accessible from inline onclick handlers ([#14](https://github.com/hardtokidnap/Yt-dlp-made-easy/pull/14))
+- Dismiss button not updating UI immediately ([#14](https://github.com/hardtokidnap/Yt-dlp-made-easy/pull/14))
 
 ### Security
 - Bumped golang.org/x/net from 0.35.0 to 0.38.0 ([#4](https://github.com/hardtokidnap/Yt-dlp-made-easy/pull/4))
