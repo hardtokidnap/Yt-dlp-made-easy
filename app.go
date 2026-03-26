@@ -54,7 +54,7 @@ func (a *App) startup(ctx context.Context) {
 		wailsruntime.EventsEmit(a.ctx, "download:update", item)
 
 		if item.Status == downloader.StatusCompleted || item.Status == downloader.StatusError {
-			a.history.Add(history.Entry{
+			if err := a.history.Add(history.Entry{
 				ID:          item.ID,
 				URL:         item.URL,
 				Title:       item.Title,
@@ -65,10 +65,13 @@ func (a *App) startup(ctx context.Context) {
 				IsAudioOnly: item.IsAudioOnly,
 				Quality:     item.Quality,
 				Format:      item.Format,
-			})
-			// Completed/errored items live in history now — remove from active queue
+			}); err != nil {
+				wailsruntime.LogError(a.ctx, "Failed to persist history: "+err.Error())
+				return
+			}
+			// Completed/errored items live in history now — remove from active queue.
+			// Queue.Remove already emits queue:update via notifyQueueUpdate.
 			a.queue.Remove(item.ID)
-			wailsruntime.EventsEmit(a.ctx, "queue:update", a.GetQueueStatus())
 			wailsruntime.EventsEmit(a.ctx, "history:update", a.history.GetRecent(3))
 		}
 	}
