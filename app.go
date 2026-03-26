@@ -358,15 +358,9 @@ func (a *App) DownloadFFmpeg() error {
 
 // GetRecentCompletedDownloads returns up to 20 history entries with files that still exist on disk.
 func (a *App) GetRecentCompletedDownloads() []map[string]string {
-	entries := a.history.GetAll()
-	result := make([]map[string]string, 0, 20)
+	entries := a.history.GetRecentCompleted(20)
+	result := make([]map[string]string, 0, len(entries))
 	for _, entry := range entries {
-		if len(result) >= 20 {
-			break
-		}
-		if entry.Status != "completed" || entry.FilePath == "" {
-			continue
-		}
 		if _, err := os.Stat(entry.FilePath); err != nil {
 			continue
 		}

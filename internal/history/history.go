@@ -108,10 +108,38 @@ func (h *History) GetRecent(limit int) []Entry {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
+	if limit < 0 {
+		limit = 0
+	}
+	if limit > len(h.entries) {
+		limit = len(h.entries)
+	}
+
 	results := make([]Entry, 0, limit)
 	for i := len(h.entries) - 1; i >= 0 && len(results) < limit; i-- {
 		if !h.entries[i].HideInQueue {
 			results = append(results, h.entries[i])
+		}
+	}
+	return results
+}
+
+func (h *History) GetRecentCompleted(limit int) []Entry {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	if limit < 0 {
+		limit = 0
+	}
+	if limit > len(h.entries) {
+		limit = len(h.entries)
+	}
+
+	results := make([]Entry, 0, limit)
+	for i := len(h.entries) - 1; i >= 0 && len(results) < limit; i-- {
+		e := h.entries[i]
+		if e.Status == "completed" && e.FilePath != "" {
+			results = append(results, e)
 		}
 	}
 	return results
@@ -212,7 +240,11 @@ func (h *History) HideFromQueue(id string) error {
 	for i := range h.entries {
 		if h.entries[i].ID == id {
 			h.entries[i].HideInQueue = true
-			return h.rewriteFile()
+			if err := h.rewriteFile(); err != nil {
+				h.entries[i].HideInQueue = false
+				return err
+			}
+			return nil
 		}
 	}
 	return nil
