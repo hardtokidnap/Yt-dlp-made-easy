@@ -218,16 +218,6 @@ func (a *App) ExportHistory() (string, error) {
 	return filepath, a.history.ExportCSV(filepath)
 }
 
-func (a *App) RedownloadFromHistory(id string) string {
-	entry := a.history.GetByID(id)
-	if entry == nil {
-		return ""
-	}
-
-	item := a.queue.Add(entry.URL, entry.IsAudioOnly, entry.Quality, entry.Format)
-	return item.ID
-}
-
 func (a *App) GetHistoryStats() map[string]interface{} { return a.history.Stats() }
 
 func (a *App) CheckForUpdates() (*updater.UpdateInfo, error) { return a.updater.CheckForUpdate() }
@@ -366,11 +356,14 @@ func (a *App) DownloadFFmpeg() error {
 	return dl.Download()
 }
 
-// GetRecentCompletedDownloads returns history entries with files that still exist on disk.
+// GetRecentCompletedDownloads returns up to 20 history entries with files that still exist on disk.
 func (a *App) GetRecentCompletedDownloads() []map[string]string {
 	entries := a.history.GetAll()
-	result := make([]map[string]string, 0)
+	result := make([]map[string]string, 0, 20)
 	for _, entry := range entries {
+		if len(result) >= 20 {
+			break
+		}
 		if entry.Status != "completed" || entry.FilePath == "" {
 			continue
 		}
