@@ -329,6 +329,10 @@ func (q *Queue) LoadPersistedItems() {
 
 	q.mu.Lock()
 	for _, item := range items {
+		// Completed/error items live in history now — skip them
+		if item.Status == StatusCompleted || item.Status == StatusError {
+			continue
+		}
 		// Process is gone — reset active states
 		switch item.Status {
 		case StatusDownloading, StatusPaused, StatusPending:
@@ -337,4 +341,5 @@ func (q *Queue) LoadPersistedItems() {
 		q.items[item.ID] = item
 	}
 	q.mu.Unlock()
+	q.Save()
 }
