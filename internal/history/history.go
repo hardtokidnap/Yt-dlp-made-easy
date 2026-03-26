@@ -193,6 +193,9 @@ func (h *History) ClearOld(days int) (int, error) {
 	}
 
 	removed := len(h.entries) - len(newEntries)
+	if newEntries == nil {
+		newEntries = make([]Entry, 0)
+	}
 	h.entries = newEntries
 
 	if err := h.rewriteFile(); err != nil {
@@ -219,7 +222,7 @@ func (h *History) Remove(id string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	var newEntries []Entry
+	newEntries := make([]Entry, 0, len(h.entries))
 	for _, entry := range h.entries {
 		if entry.ID != id {
 			newEntries = append(newEntries, entry)
@@ -243,7 +246,9 @@ func (h *History) rewriteFile() error {
 		if err != nil {
 			continue
 		}
-		file.WriteString(string(data) + "\n")
+		if _, err := file.WriteString(string(data) + "\n"); err != nil {
+			return err
+		}
 	}
 
 	return nil
