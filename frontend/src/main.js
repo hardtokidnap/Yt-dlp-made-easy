@@ -518,9 +518,7 @@ window.dismissError = window.removeFromQueue;
 window.clearQueue = async function() {
     try {
         // Hide all visible history items from queue display
-        for (const entry of state.recentHistory) {
-            await App.HideFromQueue(entry.id);
-        }
+        await Promise.all(state.recentHistory.map(entry => App.HideFromQueue(entry.id)));
         // Also clear any stopped items from the active queue
         await App.ClearCompletedDownloads();
         state.downloads = {};
@@ -1065,7 +1063,7 @@ function showConvertResult(status, detail) {
                    <button onclick="window.openConvertOutput()" class="btn-secondary flex-1">
                        📂 Open in Folder
                    </button>
-                   <button onclick="resetConvertUI()" class="btn-primary flex-1">
+                   <button onclick="window.resetConvertUI()" class="btn-primary flex-1">
                        🔄 Convert Another
                    </button>
                </div>
@@ -1075,7 +1073,7 @@ function showConvertResult(status, detail) {
                    <span>✕</span> Conversion failed
                </div>
                <div class="text-sm text-gray-400 bg-gray-800/50 rounded p-2 font-mono break-all">${escapeHtml(detail)}</div>
-               <button onclick="resetConvertUI()" class="btn-primary w-full">
+               <button onclick="window.resetConvertUI()" class="btn-primary w-full">
                    Try Again
                </button>
            </div>`;
@@ -1205,6 +1203,10 @@ window.clearHistory = async function() {
 window.hideFromQueue = async function(id) {
     try {
         await App.HideFromQueue(id);
+        state.recentHistory = state.recentHistory.filter(h => h.id !== id);
+        if (state.currentTab === 'download') {
+            updateDownloadQueue();
+        }
     } catch (err) {
         addLog(`Failed to hide from queue: ${err}`);
     }
@@ -2183,7 +2185,13 @@ function escapeHtml(text) {
 // Escape for use inside JS string literals in onclick handlers
 function escapeJsStr(str) {
     if (!str) return '';
-    return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return str
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/\n/g, '\\n')
+        .replace(/\r/g, '\\r')
+        .replace(/\u2028/g, '\\u2028')
+        .replace(/\u2029/g, '\\u2029');
 }
 
 // Custom context menu for text inputs

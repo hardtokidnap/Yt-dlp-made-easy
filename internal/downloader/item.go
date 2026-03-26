@@ -73,6 +73,8 @@ func (i *Item) SetStatus(status Status) {
 		i.Progress = 100
 		i.CompletedAt = &now
 		i.FileExists = true
+	case StatusError, StatusStopped:
+		i.FileExists = false
 	}
 }
 

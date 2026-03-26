@@ -91,17 +91,22 @@ func (h *History) Add(entry Entry) error {
 
 	file, err := os.OpenFile(util.HistoryFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
+		h.entries = h.entries[:len(h.entries)-1]
 		return err
 	}
 	defer file.Close()
 
 	data, err := json.Marshal(entry)
 	if err != nil {
+		h.entries = h.entries[:len(h.entries)-1]
 		return err
 	}
 
-	_, err = file.WriteString(string(data) + "\n")
-	return err
+	if _, err := file.WriteString(string(data) + "\n"); err != nil {
+		h.entries = h.entries[:len(h.entries)-1]
+		return err
+	}
+	return nil
 }
 
 func (h *History) GetRecent(limit int) []Entry {
@@ -261,8 +266,13 @@ func (h *History) Remove(id string) error {
 		}
 	}
 
+	old := h.entries
 	h.entries = newEntries
-	return h.rewriteFile()
+	if err := h.rewriteFile(); err != nil {
+		h.entries = old
+		return err
+	}
+	return nil
 }
 
 // rewriteFile rebuilds the file after deletions. Unlike Add(), this is not atomic.

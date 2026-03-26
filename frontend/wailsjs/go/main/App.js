@@ -130,10 +130,6 @@ export function PauseDownload(arg1) {
   return window['go']['main']['App']['PauseDownload'](arg1);
 }
 
-export function RedownloadFromHistory(arg1) {
-  return window['go']['main']['App']['RedownloadFromHistory'](arg1);
-}
-
 export function RemoveDownload(arg1) {
   return window['go']['main']['App']['RemoveDownload'](arg1);
 }
