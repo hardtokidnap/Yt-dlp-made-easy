@@ -25,6 +25,7 @@ type Entry struct {
 	IsAudioOnly bool      `json:"is_audio_only"`
 	Quality     string    `json:"quality"`
 	Format      string    `json:"format"`
+	HideInQueue bool      `json:"hide_in_queue"`
 }
 
 // History persists download records to a JSON Lines file for crash-safe appends.
@@ -90,23 +91,72 @@ func (h *History) Add(entry Entry) error {
 
 	file, err := os.OpenFile(util.HistoryFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
+		h.entries = h.entries[:len(h.entries)-1]
 		return err
 	}
 	defer file.Close()
 
 	data, err := json.Marshal(entry)
 	if err != nil {
+		h.entries = h.entries[:len(h.entries)-1]
 		return err
 	}
 
-	_, err = file.WriteString(string(data) + "\n")
-	return err
+	if _, err := file.WriteString(string(data) + "\n"); err != nil {
+		h.entries = h.entries[:len(h.entries)-1]
+		return err
+	}
+	return nil
+}
+
+func (h *History) GetRecent(limit int) []Entry {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	if limit < 0 {
+		limit = 0
+	}
+	if limit > len(h.entries) {
+		limit = len(h.entries)
+	}
+
+	results := make([]Entry, 0, limit)
+	for i := len(h.entries) - 1; i >= 0 && len(results) < limit; i-- {
+		if !h.entries[i].HideInQueue {
+			results = append(results, h.entries[i])
+		}
+	}
+	return results
+}
+
+func (h *History) GetRecentCompleted(limit int) []Entry {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	if limit < 0 {
+		limit = 0
+	}
+	if limit > len(h.entries) {
+		limit = len(h.entries)
+	}
+
+	results := make([]Entry, 0, limit)
+	for i := len(h.entries) - 1; i >= 0 && len(results) < limit; i-- {
+		e := h.entries[i]
+		if e.Status == "completed" && e.FilePath != "" {
+			results = append(results, e)
+		}
+	}
+	return results
 }
 
 func (h *History) GetAll() []Entry {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
+	if len(h.entries) == 0 {
+		return make([]Entry, 0)
+	}
 	result := make([]Entry, len(h.entries))
 	for i, entry := range h.entries {
 		result[len(h.entries)-1-i] = entry // Newest first
@@ -119,7 +169,7 @@ func (h *History) Search(query, status string) []Entry {
 	defer h.mu.RUnlock()
 
 	queryLower := strings.ToLower(query)
-	var results []Entry
+	results := make([]Entry, 0)
 
 	for i := len(h.entries) - 1; i >= 0; i-- {
 		entry := h.entries[i]
@@ -176,6 +226,9 @@ func (h *History) ClearOld(days int) (int, error) {
 	}
 
 	removed := len(h.entries) - len(newEntries)
+	if newEntries == nil {
+		newEntries = make([]Entry, 0)
+	}
 	h.entries = newEntries
 
 	if err := h.rewriteFile(); err != nil {
@@ -185,19 +238,41 @@ func (h *History) ClearOld(days int) (int, error) {
 	return removed, nil
 }
 
+func (h *History) HideFromQueue(id string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	for i := range h.entries {
+		if h.entries[i].ID == id {
+			h.entries[i].HideInQueue = true
+			if err := h.rewriteFile(); err != nil {
+				h.entries[i].HideInQueue = false
+				return err
+			}
+			return nil
+		}
+	}
+	return nil
+}
+
 func (h *History) Remove(id string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	var newEntries []Entry
+	newEntries := make([]Entry, 0, len(h.entries))
 	for _, entry := range h.entries {
 		if entry.ID != id {
 			newEntries = append(newEntries, entry)
 		}
 	}
 
+	old := h.entries
 	h.entries = newEntries
-	return h.rewriteFile()
+	if err := h.rewriteFile(); err != nil {
+		h.entries = old
+		return err
+	}
+	return nil
 }
 
 // rewriteFile rebuilds the file after deletions. Unlike Add(), this is not atomic.
@@ -213,7 +288,9 @@ func (h *History) rewriteFile() error {
 		if err != nil {
 			continue
 		}
-		file.WriteString(string(data) + "\n")
+		if _, err := file.WriteString(string(data) + "\n"); err != nil {
+			return err
+		}
 	}
 
 	return nil

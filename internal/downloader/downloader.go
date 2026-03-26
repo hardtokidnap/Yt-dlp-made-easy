@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -21,6 +22,14 @@ var (
 	ntdll              = syscall.NewLazyDLL("ntdll.dll")
 	ntSuspendProcess   = ntdll.NewProc("NtSuspendProcess")
 	ntResumeProcess    = ntdll.NewProc("NtResumeProcess")
+
+	progressRe = regexp.MustCompile(`\[download\]\s+(\d+\.?\d*)%\s+of\s+~?\s*(\S+)\s+at\s+(\S+)\s+ETA\s+(\S+)`)
+	destRe     = regexp.MustCompile(`\[download\]\s+Destination:\s+(.+)`)
+	playlistRe = regexp.MustCompile(`\[download\]\s+Downloading\s+item\s+(\d+)\s+of\s+(\d+)`)
+	alreadyRe  = regexp.MustCompile(`\[download\]\s+(.+?)\s+has already been downloaded`)
+	mergerRe   = regexp.MustCompile(`\[Merger\]\s+Merging formats into "(.+)"`)
+	extractRe  = regexp.MustCompile(`\[ExtractAudio\]\s+Destination:\s+(.+)`)
+	moveRe     = regexp.MustCompile(`\[MoveFiles\]\s+Moving file ".+" to "(.+)"`)
 )
 
 // Downloader wraps a yt-dlp process with pause/resume support via Windows NT APIs.
@@ -215,7 +224,6 @@ func (d *Downloader) parseOutput(line string) {
 	line = strings.TrimSpace(line)
 
 	// Progress: [download] 50.0% of 100.00MiB at 5.00MiB/s ETA 00:10
-	progressRe := regexp.MustCompile(`\[download\]\s+(\d+\.?\d*)%\s+of\s+~?\s*(\S+)\s+at\s+(\S+)\s+ETA\s+(\S+)`)
 	if matches := progressRe.FindStringSubmatch(line); matches != nil {
 		if percent, err := strconv.ParseFloat(matches[1], 64); err == nil {
 			d.item.Progress = percent
@@ -226,20 +234,12 @@ func (d *Downloader) parseOutput(line string) {
 	}
 
 	// Destination: [download] Destination: filename.mp4
-	destRe := regexp.MustCompile(`\[download\]\s+Destination:\s+(.+)`)
 	if matches := destRe.FindStringSubmatch(line); matches != nil {
-		d.item.FilePath = strings.TrimSpace(matches[1])
-		if d.item.Title == "" {
-			title := strings.TrimSuffix(matches[1], ".mp4")
-			title = strings.TrimSuffix(title, ".webm")
-			title = strings.TrimSuffix(title, ".mkv")
-			d.item.Title = title
-		}
+		d.setFileInfo(strings.TrimSpace(matches[1]))
 		return
 	}
 
 	// Playlist: [download] Downloading item 1 of 10
-	playlistRe := regexp.MustCompile(`\[download\]\s+Downloading\s+item\s+(\d+)\s+of\s+(\d+)`)
 	if matches := playlistRe.FindStringSubmatch(line); matches != nil {
 		if current, err := strconv.Atoi(matches[1]); err == nil {
 			d.item.CurrentItem = current
@@ -276,32 +276,37 @@ func (d *Downloader) parseOutput(line string) {
 
 	if strings.Contains(line, "has already been downloaded") {
 		d.item.Progress = 100
-		alreadyRe := regexp.MustCompile(`\[download\]\s+(.+?)\s+has already been downloaded`)
 		if matches := alreadyRe.FindStringSubmatch(line); matches != nil {
-			d.item.FilePath = strings.TrimSpace(matches[1])
+			d.setFileInfo(strings.TrimSpace(matches[1]))
 		}
 		return
 	}
 
 	// Post-processing updates the final file path after merge/convert/move
 	// [Merger] Merging formats into "filename.mp4"
-	mergerRe := regexp.MustCompile(`\[Merger\]\s+Merging formats into "(.+)"`)
 	if matches := mergerRe.FindStringSubmatch(line); matches != nil {
-		d.item.FilePath = strings.TrimSpace(matches[1])
+		d.setFileInfo(strings.TrimSpace(matches[1]))
 		return
 	}
 
 	// [ExtractAudio] Destination: filename.mp3
-	extractRe := regexp.MustCompile(`\[ExtractAudio\]\s+Destination:\s+(.+)`)
 	if matches := extractRe.FindStringSubmatch(line); matches != nil {
-		d.item.FilePath = strings.TrimSpace(matches[1])
+		d.setFileInfo(strings.TrimSpace(matches[1]))
 		return
 	}
 
 	// [MoveFiles] Moving file "source" to "destination"
-	moveRe := regexp.MustCompile(`\[MoveFiles\]\s+Moving file ".+" to "(.+)"`)
 	if matches := moveRe.FindStringSubmatch(line); matches != nil {
-		d.item.FilePath = strings.TrimSpace(matches[1])
+		d.setFileInfo(strings.TrimSpace(matches[1]))
 		return
+	}
+}
+
+// setFileInfo sets the file path and extracts a title from the filename.
+func (d *Downloader) setFileInfo(path string) {
+	d.item.FilePath = path
+	if d.item.Title == "" {
+		name := filepath.Base(path)
+		d.item.Title = strings.TrimSuffix(name, filepath.Ext(name))
 	}
 }

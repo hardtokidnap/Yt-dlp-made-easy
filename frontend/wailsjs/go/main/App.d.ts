@@ -32,7 +32,7 @@ export function DownloadFFmpeg():Promise<void>;
 
 export function ExportHistory():Promise<string>;
 
-export function GetAppInfo():Promise<Record<string, string>>;
+export function GetAppInfo():Promise<Record<string, any>>;
 
 export function GetClipboard():Promise<string>;
 
@@ -40,7 +40,7 @@ export function GetConversionPresets():Promise<Array<converter.Preset>>;
 
 export function GetFFmpegVersion():Promise<string>;
 
-export function GetHistory(arg1:main.HistoryFilter):Promise<Array<history.Entry>>;
+export function GetHistory(arg1:string,arg2:string):Promise<Array<history.Entry>>;
 
 export function GetHistoryStats():Promise<Record<string, any>>;
 
@@ -50,9 +50,13 @@ export function GetQueueStatus():Promise<Array<downloader.Item>>;
 
 export function GetRecentCompletedDownloads():Promise<Array<Record<string, string>>>;
 
+export function GetRecentHistory(arg1:number):Promise<Array<history.Entry>>;
+
 export function GetSettings():Promise<config.Settings>;
 
 export function GetYtDlpVersion():Promise<string>;
+
+export function HideFromQueue(arg1:string):Promise<void>;
 
 export function IsFFmpegInstalled():Promise<boolean>;
 
@@ -68,9 +72,9 @@ export function PauseAllDownloads():Promise<number>;
 
 export function PauseDownload(arg1:string):Promise<void>;
 
-export function RedownloadFromHistory(arg1:string):Promise<string>;
-
 export function RemoveDownload(arg1:string):Promise<void>;
+
+export function RemoveHistoryEntry(arg1:string):Promise<void>;
 
 export function ResumeAllDownloads():Promise<number>;
 

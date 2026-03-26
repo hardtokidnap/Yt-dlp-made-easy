@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -40,10 +41,39 @@ func (a *App) startup(ctx context.Context) {
 	}
 	a.settings = settings
 
+	// History must init before queue — the OnItemUpdate callback references a.history
+	hist, err := history.NewHistory()
+	if err != nil {
+		hist = &history.History{}
+	}
+	a.history = hist
+
 	a.queue = downloader.NewQueue(settings)
 	a.queue.LoadPersistedItems()
 	a.queue.OnItemUpdate = func(item *downloader.Item) {
 		wailsruntime.EventsEmit(a.ctx, "download:update", item)
+
+		if item.Status == downloader.StatusCompleted || item.Status == downloader.StatusError {
+			if err := a.history.Add(history.Entry{
+				ID:          item.ID,
+				URL:         item.URL,
+				Title:       item.Title,
+				Status:      string(item.Status),
+				FilePath:    item.FilePath,
+				FileSize:    item.FileSize,
+				Error:       item.Error,
+				IsAudioOnly: item.IsAudioOnly,
+				Quality:     item.Quality,
+				Format:      item.Format,
+			}); err != nil {
+				wailsruntime.LogError(a.ctx, "Failed to persist history: "+err.Error())
+				return
+			}
+			// Completed/errored items live in history now — remove from active queue.
+			// Queue.Remove already emits queue:update via notifyQueueUpdate.
+			a.queue.Remove(item.ID)
+			wailsruntime.EventsEmit(a.ctx, "history:update", a.history.GetRecent(3))
+		}
 	}
 	a.queue.OnQueueUpdate = func() {
 		wailsruntime.EventsEmit(a.ctx, "queue:update", a.GetQueueStatus())
@@ -54,12 +84,6 @@ func (a *App) startup(ctx context.Context) {
 			"line": line,
 		})
 	}
-
-	hist, err := history.NewHistory()
-	if err != nil {
-		hist = &history.History{}
-	}
-	a.history = hist
 
 	a.updater = updater.NewUpdater(settings.Advanced.UseNightly)
 	a.updater.OnProgress = func(msg string) {
@@ -152,17 +176,32 @@ func (a *App) BrowseFolder() string {
 	return folder
 }
 
-type HistoryFilter struct {
-	Query  string `json:"query"`
-	Status string `json:"status"`
+func (a *App) GetHistory(query, status string) []history.Entry {
+	return a.history.Search(query, status)
 }
 
-func (a *App) GetHistory(filter HistoryFilter) []history.Entry {
-	return a.history.Search(filter.Query, filter.Status)
+func (a *App) GetRecentHistory(limit int) []history.Entry {
+	return a.history.GetRecent(limit)
 }
 
-func (a *App) ClearHistory() error           { return a.history.Clear() }
-func (a *App) ClearOldHistory(days int) int  { count, _ := a.history.ClearOld(days); return count }
+func (a *App) ClearHistory() error          { return a.history.Clear() }
+func (a *App) ClearOldHistory(days int) int { count, _ := a.history.ClearOld(days); return count }
+
+func (a *App) HideFromQueue(id string) error {
+	if err := a.history.HideFromQueue(id); err != nil {
+		return err
+	}
+	wailsruntime.EventsEmit(a.ctx, "history:update", a.history.GetRecent(3))
+	return nil
+}
+
+func (a *App) RemoveHistoryEntry(id string) error {
+	if err := a.history.Remove(id); err != nil {
+		return err
+	}
+	wailsruntime.EventsEmit(a.ctx, "history:update", a.history.GetRecent(3))
+	return nil
+}
 
 func (a *App) ExportHistory() (string, error) {
 	filepath, err := wailsruntime.SaveFileDialog(a.ctx, wailsruntime.SaveDialogOptions{
@@ -177,16 +216,6 @@ func (a *App) ExportHistory() (string, error) {
 	}
 
 	return filepath, a.history.ExportCSV(filepath)
-}
-
-func (a *App) RedownloadFromHistory(id string) string {
-	entry := a.history.GetByID(id)
-	if entry == nil {
-		return ""
-	}
-
-	item := a.queue.Add(entry.URL, entry.IsAudioOnly, entry.Quality, entry.Format)
-	return item.ID
 }
 
 func (a *App) GetHistoryStats() map[string]interface{} { return a.history.Stats() }
@@ -327,18 +356,19 @@ func (a *App) DownloadFFmpeg() error {
 	return dl.Download()
 }
 
-// GetRecentCompletedDownloads returns completed queue items with file paths for the converter's "recent downloads" dropdown.
+// GetRecentCompletedDownloads returns up to 20 history entries with files that still exist on disk.
 func (a *App) GetRecentCompletedDownloads() []map[string]string {
-	items := a.queue.GetAll()
-	var result []map[string]string
-	for _, item := range items {
-		if item.Status == downloader.StatusCompleted && item.FilePath != "" {
-			result = append(result, map[string]string{
-				"id":        item.ID,
-				"title":     item.Title,
-				"file_path": item.FilePath,
-			})
+	entries := a.history.GetRecentCompleted(20)
+	result := make([]map[string]string, 0, len(entries))
+	for _, entry := range entries {
+		if _, err := os.Stat(entry.FilePath); err != nil {
+			continue
 		}
+		result = append(result, map[string]string{
+			"id":        entry.ID,
+			"title":     entry.Title,
+			"file_path": entry.FilePath,
+		})
 	}
 	return result
 }

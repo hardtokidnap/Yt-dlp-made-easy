@@ -31,7 +31,7 @@ jobs:
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
-          languages: go
+          languages: go, javascript
 
       - name: Build
         env:
