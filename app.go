@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -65,6 +66,7 @@ func (a *App) startup(ctx context.Context) {
 				IsAudioOnly: item.IsAudioOnly,
 				Quality:     item.Quality,
 				Format:      item.Format,
+				FileExt:     filepath.Ext(item.FilePath),
 			}); err != nil {
 				wailsruntime.LogError(a.ctx, "Failed to persist history: "+err.Error())
 				return
@@ -204,18 +206,18 @@ func (a *App) RemoveHistoryEntry(id string) error {
 }
 
 func (a *App) ExportHistory() (string, error) {
-	filepath, err := wailsruntime.SaveFileDialog(a.ctx, wailsruntime.SaveDialogOptions{
+	outputPath, err := wailsruntime.SaveFileDialog(a.ctx, wailsruntime.SaveDialogOptions{
 		Title:           "Export History",
 		DefaultFilename: "download_history.csv",
 		Filters: []wailsruntime.FileFilter{
 			{DisplayName: "CSV Files", Pattern: "*.csv"},
 		},
 	})
-	if err != nil || filepath == "" {
+	if err != nil || outputPath == "" {
 		return "", err
 	}
 
-	return filepath, a.history.ExportCSV(filepath)
+	return outputPath, a.history.ExportCSV(outputPath)
 }
 
 func (a *App) GetHistoryStats() map[string]interface{} { return a.history.Stats() }

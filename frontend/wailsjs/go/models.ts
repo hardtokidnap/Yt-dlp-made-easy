@@ -373,7 +373,9 @@ export namespace history {
 	    is_audio_only: boolean;
 	    quality: string;
 	    format: string;
+	    file_ext?: string;
 	    hide_in_queue: boolean;
+	    file_exists: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Entry(source);
@@ -392,7 +394,9 @@ export namespace history {
 	        this.is_audio_only = source["is_audio_only"];
 	        this.quality = source["quality"];
 	        this.format = source["format"];
+	        this.file_ext = source["file_ext"];
 	        this.hide_in_queue = source["hide_in_queue"];
+	        this.file_exists = source["file_exists"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
