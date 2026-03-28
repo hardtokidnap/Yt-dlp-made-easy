@@ -7,7 +7,8 @@ on:
     branches: [main, Development]
 
 jobs:
-  analyze:
+  analyze-js:
+    name: Analyze JavaScript
     runs-on: ubuntu-latest
     permissions:
       security-events: write
@@ -31,12 +32,33 @@ jobs:
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
-          languages: go, javascript
+          languages: javascript-typescript
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+
+  analyze-go:
+    name: Analyze Go
+    runs-on: windows-latest
+    permissions:
+      security-events: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: go
 
       - name: Build
-        env:
-          GOOS: windows
-          GOARCH: amd64
         run: go build ./...
 
       - name: Perform CodeQL Analysis
