@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [V3.1.1] - 2026-03-28
+
+### Fixed
+- "Open in Folder" now correctly reveals the file in Explorer instead of opening it directly ([#16](https://github.com/hardtokidnap/Yt-dlp-made-easy/pull/16))
+- File existence checks now run consistently across all history methods, not just the download tab ([#16](https://github.com/hardtokidnap/Yt-dlp-made-easy/pull/16))
+- History entries with deleted files are now grayed out with a "File missing" label ([#16](https://github.com/hardtokidnap/Yt-dlp-made-easy/pull/16))
+- Extra args autocomplete now keeps suggesting after the first selection — replaced native `<datalist>` with a custom multi-token dropdown ([#18](https://github.com/hardtokidnap/Yt-dlp-made-easy/pull/18))
+
+### Changed
+- CodeQL workflow split into separate Go and JS analysis jobs; Go job runs on `windows-latest` to resolve `golang.org/x/sys/windows` import errors
+- CodeQL actions bumped from v3 to v4
+
 ## [V3.1.0] - 2026-03-26
 
 ### Added
