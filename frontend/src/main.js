@@ -1533,43 +1533,12 @@ async function loadSettingsContent() {
                     <input type="text" id="output-template" value="${escapeHtml(s.Advanced.OutputTemplate)}"
                            class="input-field" placeholder="%(title)s.%(ext)s">
                 </div>
-                <div>
+                <div class="relative" id="extra-args-wrapper">
                     <label class="block text-sm font-medium mb-2">Extra Arguments</label>
-                    <input type="text" id="extra-args" list="ytdlp-args-list" value="${escapeHtml(s.Advanced.ExtraArgs)}"
-                           class="input-field" placeholder="--verbose --ignore-errors">
-                    <datalist id="ytdlp-args-list">
-                        <option value="--verbose">Enable verbose output</option>
-                        <option value="--ignore-errors">Skip unavailable videos in playlist</option>
-                        <option value="--no-playlist">Download single video even if URL contains playlist</option>
-                        <option value="--yes-playlist">Download entire playlist</option>
-                        <option value="--flat-playlist">List playlist contents without downloading</option>
-                        <option value="--no-check-certificates">Ignore SSL certificate errors</option>
-                        <option value="--prefer-free-formats">Prefer free codecs (webm, opus, vp9)</option>
-                        <option value="--no-mtime">Don't use Last-modified header for file timestamp</option>
-                        <option value="--write-subs">Download subtitles</option>
-                        <option value="--write-auto-subs">Download auto-generated subtitles</option>
-                        <option value="--sub-langs all">Download all available subtitle languages</option>
-                        <option value="--write-description">Write video description to file</option>
-                        <option value="--write-info-json">Write video metadata to JSON file</option>
-                        <option value="--write-comments">Download video comments</option>
-                        <option value="--no-overwrites">Don't overwrite existing files</option>
-                        <option value="--restrict-filenames">Restrict filenames to ASCII characters</option>
-                        <option value="--trim-filenames 100">Limit filename length to 100 chars</option>
-                        <option value="--extract-audio">Extract audio only (convert if needed)</option>
-                        <option value="--keep-video">Keep video file after audio extraction</option>
-                        <option value="--remux-video mp4">Remux to mp4 container</option>
-                        <option value="--recode-video mp4">Re-encode to mp4</option>
-                        <option value="--sleep-interval 5">Wait 5 seconds between downloads</option>
-                        <option value="--max-sleep-interval 30">Random sleep up to 30 seconds</option>
-                        <option value="--concurrent-fragments 4">Download 4 fragments in parallel</option>
-                        <option value="--geo-bypass">Bypass geographic restrictions</option>
-                        <option value="--force-ipv4">Force IPv4 connection</option>
-                        <option value="--force-ipv6">Force IPv6 connection</option>
-                        <option value="--match-filter !is_live">Skip live streams</option>
-                        <option value="--download-archive archive.txt">Track downloaded videos</option>
-                        <option value="--print-to-file filename %(title)s titles.txt">Save titles to file</option>
-                    </datalist>
-                    <p class="text-xs text-gray-500 mt-1">Type to see suggestions. Multiple args separated by spaces.</p>
+                    <input type="text" id="extra-args" value="${escapeHtml(s.Advanced.ExtraArgs)}"
+                           class="input-field" placeholder="--verbose --ignore-errors" autocomplete="off">
+                    <div id="extra-args-dropdown" class="hidden absolute z-50 w-full mt-1 bg-gray-700 border border-gray-600 rounded-lg shadow-lg max-h-48 overflow-y-auto"></div>
+                    <p class="text-xs text-gray-500 mt-1">Type -- to see suggestions. Keeps suggesting as you add more arguments.</p>
                 </div>
                 <div>
                     <button onclick="window.checkForUpdates()" class="btn-secondary w-full">
@@ -1591,8 +1560,9 @@ async function loadSettingsContent() {
         </div>
     `;
 
-    // Setup auto-save after DOM is ready
+    // Setup auto-save and custom autocomplete after DOM is ready
     setupSettingsAutoSave();
+    setupExtraArgsAutocomplete();
 
     // Load JS runtime info asynchronously
     loadJSRuntimeStatus();
@@ -1773,6 +1743,142 @@ function setupSettingsAutoSave() {
             const eventType = element.type === 'checkbox' ? 'change' : 'input';
             element.addEventListener(eventType, autoSaveSettings);
         }
+    });
+}
+
+const YTDLP_ARG_SUGGESTIONS = [
+    { value: '--verbose', desc: 'Enable verbose output' },
+    { value: '--ignore-errors', desc: 'Skip unavailable videos in playlist' },
+    { value: '--no-playlist', desc: 'Download single video even if URL contains playlist' },
+    { value: '--yes-playlist', desc: 'Download entire playlist' },
+    { value: '--flat-playlist', desc: 'List playlist contents without downloading' },
+    { value: '--no-check-certificates', desc: 'Ignore SSL certificate errors' },
+    { value: '--prefer-free-formats', desc: 'Prefer free codecs (webm, opus, vp9)' },
+    { value: '--no-mtime', desc: "Don't use Last-modified header for file timestamp" },
+    { value: '--write-subs', desc: 'Download subtitles' },
+    { value: '--write-auto-subs', desc: 'Download auto-generated subtitles' },
+    { value: '--sub-langs all', desc: 'Download all available subtitle languages' },
+    { value: '--write-description', desc: 'Write video description to file' },
+    { value: '--write-info-json', desc: 'Write video metadata to JSON file' },
+    { value: '--write-comments', desc: 'Download video comments' },
+    { value: '--no-overwrites', desc: "Don't overwrite existing files" },
+    { value: '--restrict-filenames', desc: 'Restrict filenames to ASCII characters' },
+    { value: '--trim-filenames 100', desc: 'Limit filename length to 100 chars' },
+    { value: '--extract-audio', desc: 'Extract audio only (convert if needed)' },
+    { value: '--keep-video', desc: 'Keep video file after audio extraction' },
+    { value: '--remux-video mp4', desc: 'Remux to mp4 container' },
+    { value: '--recode-video mp4', desc: 'Re-encode to mp4' },
+    { value: '--sleep-interval 5', desc: 'Wait 5 seconds between downloads' },
+    { value: '--max-sleep-interval 30', desc: 'Random sleep up to 30 seconds' },
+    { value: '--concurrent-fragments 4', desc: 'Download 4 fragments in parallel' },
+    { value: '--geo-bypass', desc: 'Bypass geographic restrictions' },
+    { value: '--force-ipv4', desc: 'Force IPv4 connection' },
+    { value: '--force-ipv6', desc: 'Force IPv6 connection' },
+    { value: '--match-filter !is_live', desc: 'Skip live streams' },
+    { value: '--download-archive archive.txt', desc: 'Track downloaded videos' },
+    { value: '--print-to-file filename %(title)s titles.txt', desc: 'Save titles to file' },
+];
+
+// Custom multi-token autocomplete — matches the last argument being typed
+function setupExtraArgsAutocomplete() {
+    const input = document.getElementById('extra-args');
+    const dropdown = document.getElementById('extra-args-dropdown');
+    if (!input || !dropdown) return;
+
+    let selectedIndex = -1;
+
+    function getLastToken(text) {
+        const trimmed = text.trimEnd();
+        // Find the start of the last --flag group
+        const lastDashDash = trimmed.lastIndexOf(' --');
+        if (lastDashDash !== -1) return trimmed.slice(lastDashDash + 1);
+        // If text starts with -- and has no prior space-delimited flags
+        if (trimmed.startsWith('--')) return trimmed;
+        return '';
+    }
+
+    function showSuggestions() {
+        const token = getLastToken(input.value);
+        if (token.length < 2) {
+            dropdown.classList.add('hidden');
+            return;
+        }
+
+        const tokenLower = token.toLowerCase();
+        const alreadyUsed = input.value.toLowerCase();
+        const matches = YTDLP_ARG_SUGGESTIONS.filter(s => {
+            // Match against the flag portion of the suggestion
+            const flag = s.value.split(' ')[0];
+            return flag.toLowerCase().includes(tokenLower.split(' ')[0]) && !alreadyUsed.includes(flag);
+        });
+
+        if (matches.length === 0) {
+            dropdown.classList.add('hidden');
+            return;
+        }
+
+        selectedIndex = -1;
+        dropdown.innerHTML = matches.map((s, i) => `
+            <div class="px-3 py-2 cursor-pointer hover:bg-gray-600 text-sm flex justify-between items-center" data-index="${i}" data-value="${escapeHtml(s.value)}">
+                <span class="font-mono text-blue-300">${escapeHtml(s.value)}</span>
+                <span class="text-gray-400 text-xs ml-3 truncate">${escapeHtml(s.desc)}</span>
+            </div>
+        `).join('');
+        dropdown.classList.remove('hidden');
+    }
+
+    function pickSuggestion(value) {
+        const text = input.value;
+        const trimmed = text.trimEnd();
+        const lastDashDash = trimmed.lastIndexOf(' --');
+        if (lastDashDash !== -1) {
+            input.value = trimmed.slice(0, lastDashDash + 1) + value + ' ';
+        } else {
+            // Replace entire input if it was the first argument
+            const prefix = trimmed.startsWith('--') ? '' : trimmed;
+            input.value = (prefix ? prefix + ' ' : '') + value + ' ';
+        }
+        dropdown.classList.add('hidden');
+        input.focus();
+        autoSaveSettings();
+    }
+
+    input.addEventListener('input', showSuggestions);
+    input.addEventListener('focus', showSuggestions);
+
+    input.addEventListener('keydown', (e) => {
+        if (dropdown.classList.contains('hidden')) return;
+        const items = dropdown.children;
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            selectedIndex = Math.max(selectedIndex - 1, 0);
+        } else if (e.key === 'Enter' && selectedIndex >= 0) {
+            e.preventDefault();
+            pickSuggestion(items[selectedIndex].dataset.value);
+            return;
+        } else if (e.key === 'Escape') {
+            dropdown.classList.add('hidden');
+            return;
+        } else {
+            return;
+        }
+        for (let i = 0; i < items.length; i++) {
+            items[i].classList.toggle('bg-gray-600', i === selectedIndex);
+        }
+    });
+
+    dropdown.addEventListener('mousedown', (e) => {
+        // mousedown instead of click so it fires before blur
+        const item = e.target.closest('[data-value]');
+        if (item) pickSuggestion(item.dataset.value);
+    });
+
+    input.addEventListener('blur', () => {
+        // Small delay so mousedown on dropdown fires first
+        setTimeout(() => dropdown.classList.add('hidden'), 150);
     });
 }
 
