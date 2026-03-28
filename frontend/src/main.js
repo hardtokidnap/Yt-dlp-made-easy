@@ -269,10 +269,11 @@ function renderHistoryCard(entry) {
         : '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-900/50 text-blue-300 border border-blue-700/50">🎬 Video</span>';
 
     const isError = entry.status === 'error';
+    const fileMissing = !isError && entry.file_path && entry.file_exists === false;
     const title = entry.title || '';
 
     return `
-        <div class="bg-gray-700 rounded-lg p-4 space-y-2${isError ? ' border border-red-800/50' : ''}">
+        <div class="bg-gray-700 rounded-lg p-4 space-y-2${isError ? ' border border-red-800/50' : ''}${fileMissing ? ' opacity-50' : ''}">
             <div class="flex justify-between items-start">
                 <div class="flex-1 min-w-0 mr-4">
                     <div class="flex items-center gap-2 min-w-0">
@@ -285,10 +286,13 @@ function renderHistoryCard(entry) {
                     ` : ''}
                 </div>
                 <div class="flex items-center space-x-2 shrink-0">
-                    ${!isError && entry.file_path ? `
-                        <button onclick="window.openFile('${escapeJsStr(entry.file_path)}')" class="btn-secondary text-xs">
+                    ${!isError && entry.file_path && !fileMissing ? `
+                        <button onclick="window.openFileInFolder('${escapeJsStr(entry.file_path)}')" class="btn-secondary text-xs">
                             📂 Open Folder
                         </button>
+                    ` : ''}
+                    ${fileMissing ? `
+                        <span class="text-xs text-gray-500 italic">File missing</span>
                     ` : ''}
                     ${entry.url ? `
                         <button onclick="window.redownload('${escapeJsStr(entry.url)}')" class="btn-secondary text-xs">
@@ -346,7 +350,7 @@ function renderDownloadCard(item) {
                         </button>
                     ` : ''}
                     ${item.status === 'completed' && item.file_path && !fileMissing ? `
-                        <button onclick="window.openFileInFolder('${item.id}')" class="btn-secondary text-xs">
+                        <button onclick="window.openFileInFolder('${escapeJsStr(item.file_path)}')" class="btn-secondary text-xs">
                             📂 Open Folder
                         </button>
                     ` : ''}
@@ -1161,11 +1165,14 @@ function displayHistory() {
         return;
     }
 
-    list.innerHTML = filtered.map(item => `
-        <div class="bg-gray-700 rounded p-3 flex justify-between items-center hover:bg-gray-600 transition-colors">
+    list.innerHTML = filtered.map(item => {
+        const hasFile = item.file_path && item.file_exists !== false;
+        const fileMissing = item.file_path && item.file_exists === false;
+        return `
+        <div class="bg-gray-700 rounded p-3 flex justify-between items-center hover:bg-gray-600 transition-colors${fileMissing ? ' opacity-50' : ''}">
             <div class="flex-1 min-w-0">
-                <div class="font-medium truncate cursor-pointer hover:text-blue-400"
-                     onclick="window.openFile('${escapeJsStr(item.file_path)}')">
+                <div class="font-medium truncate${hasFile ? ' cursor-pointer hover:text-blue-400' : ''}"
+                     ${hasFile ? `onclick="window.openFileInFolder('${escapeJsStr(item.file_path)}')"` : ''}>
                     ${escapeHtml(item.title || item.url)}
                 </div>
                 ${item.title ? `
@@ -1175,7 +1182,7 @@ function displayHistory() {
                     </div>
                 ` : ''}
                 <div class="text-xs text-gray-500 mt-1">
-                    ${new Date(item.date).toLocaleString()} • ${item.status}
+                    ${new Date(item.date).toLocaleString()} • ${item.status}${fileMissing ? ' • <span class="text-red-400 italic">File missing</span>' : ''}
                 </div>
             </div>
             <div class="flex items-center space-x-2 shrink-0 ml-4">
@@ -1184,8 +1191,8 @@ function displayHistory() {
                 </button>
                 <button onclick="window.removeHistoryEntry('${item.id}')" class="text-gray-500 hover:text-red-400 text-lg leading-none" title="Delete">🗑️</button>
             </div>
-        </div>
-    `).join('');
+        </div>`;
+    }).join('');
 }
 
 window.clearHistory = async function() {
@@ -1228,21 +1235,13 @@ window.openFile = function(path) {
     }
 };
 
-window.openFileInFolder = async function(id) {
-    addVerboseLog(`openFileInFolder called with id: ${id}`);
-    const item = state.downloads[id];
-    if (!item) {
-        addVerboseLog(`Item not found in state.downloads. Keys: ${Object.keys(state.downloads).join(', ') || '(empty)'}`);
-        return;
-    }
-    addVerboseLog(`file_path: "${item.file_path || '(empty)'}",  status: "${item.status}", title: "${item.title || '(none)'}"`);
-    if (!item.file_path) {
+window.openFileInFolder = async function(path) {
+    if (!path) {
         addLog(`⚠️ file_path is empty — cannot open folder`);
         return;
     }
     try {
-        await App.OpenFileInFolder(item.file_path);
-        addVerboseLog(`OpenFileInFolder succeeded`);
+        await App.OpenFileInFolder(path);
     } catch (err) {
         addLog(`❌ OpenFileInFolder error: ${err}`);
     }
@@ -2282,6 +2281,16 @@ function setupContextMenu() {
         }
     });
 }
+
+// Re-check file existence when the app regains focus
+document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'visible') {
+        await Promise.all([loadRecentHistory(), loadQueueStatus()]);
+        if (state.currentTab === 'download') {
+            updateDownloadQueue();
+        }
+    }
+});
 
 // Initialize on load
 document.addEventListener('DOMContentLoaded', () => {

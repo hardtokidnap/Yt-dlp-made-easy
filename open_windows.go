@@ -45,8 +45,13 @@ func (a *App) OpenFileInFolder(filePath string) error {
 		absPath = filePath
 	}
 
-	if _, statErr := os.Stat(absPath); statErr != nil {
-		return fmt.Errorf("file not found at %q: %w", absPath, statErr)
+	// If exact file is gone (e.g. deleted after conversion), open the parent folder
+	if _, statErr := os.Stat(absPath); os.IsNotExist(statErr) {
+		dir := filepath.Dir(absPath)
+		if err := exec.Command("explorer", dir).Start(); err != nil {
+			return fmt.Errorf("explorer failed to open directory %q: %w", dir, err)
+		}
+		return nil
 	}
 
 	cmdLine := `explorer /select,"` + absPath + `"`

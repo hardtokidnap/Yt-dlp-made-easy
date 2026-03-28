@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -25,7 +26,9 @@ type Entry struct {
 	IsAudioOnly bool      `json:"is_audio_only"`
 	Quality     string    `json:"quality"`
 	Format      string    `json:"format"`
+	FileExt     string    `json:"file_ext,omitempty"`
 	HideInQueue bool      `json:"hide_in_queue"`
+	FileExists  bool      `json:"file_exists"`
 }
 
 // History persists download records to a JSON Lines file for crash-safe appends.
@@ -71,6 +74,10 @@ func (h *History) load() error {
 		var entry Entry
 		if err := json.Unmarshal([]byte(line), &entry); err != nil {
 			continue // Skip malformed lines gracefully
+		}
+		// Backfill FileExt for entries created before this field existed
+		if entry.FileExt == "" && entry.FilePath != "" {
+			entry.FileExt = filepath.Ext(entry.FilePath)
 		}
 		h.entries = append(h.entries, entry)
 	}
@@ -126,6 +133,7 @@ func (h *History) GetRecent(limit int) []Entry {
 			results = append(results, h.entries[i])
 		}
 	}
+	stampFileExists(results)
 	return results
 }
 
@@ -147,6 +155,7 @@ func (h *History) GetRecentCompleted(limit int) []Entry {
 			results = append(results, e)
 		}
 	}
+	stampFileExists(results)
 	return results
 }
 
@@ -161,6 +170,7 @@ func (h *History) GetAll() []Entry {
 	for i, entry := range h.entries {
 		result[len(h.entries)-1-i] = entry // Newest first
 	}
+	stampFileExists(result)
 	return result
 }
 
@@ -189,6 +199,7 @@ func (h *History) Search(query, status string) []Entry {
 		results = append(results, entry)
 	}
 
+	stampFileExists(results)
 	return results
 }
 
@@ -356,6 +367,15 @@ func (h *History) Stats() map[string]interface{} {
 		"completed":  completed,
 		"failed":     failed,
 		"total_size": formatBytes(totalSize),
+	}
+}
+
+func stampFileExists(entries []Entry) {
+	for i := range entries {
+		if entries[i].FilePath != "" {
+			_, err := os.Stat(entries[i].FilePath)
+			entries[i].FileExists = err == nil
+		}
 	}
 }
 
