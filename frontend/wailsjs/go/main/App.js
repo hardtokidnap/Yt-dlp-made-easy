@@ -130,6 +130,10 @@ export function PauseDownload(arg1) {
   return window['go']['main']['App']['PauseDownload'](arg1);
 }
 
+export function ProbeFile(arg1) {
+  return window['go']['main']['App']['ProbeFile'](arg1);
+}
+
 export function RemoveDownload(arg1) {
   return window['go']['main']['App']['RemoveDownload'](arg1);
 }

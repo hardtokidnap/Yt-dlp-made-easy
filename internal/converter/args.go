@@ -2,6 +2,7 @@ package converter
 
 import (
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -16,6 +17,7 @@ type ConversionOptions struct {
 	VideoBitrate string `json:"video_bitrate"`
 	AudioBitrate string `json:"audio_bitrate"`
 	Resolution   string `json:"resolution"`
+	CRF          int    `json:"crf"`
 	CustomArgs   string `json:"custom_args"`
 }
 
@@ -132,8 +134,14 @@ func BuildArgs(opts ConversionOptions) []string {
 		args = append(args, "-preset", opts.Preset)
 	}
 
-	// Video bitrate
-	if opts.VideoBitrate != "" && !isAudioOnly {
+	// Quality: CRF takes priority over video bitrate (they are mutually exclusive in ffmpeg)
+	if opts.CRF > 0 && !isAudioOnly {
+		args = append(args, "-crf", strconv.Itoa(opts.CRF))
+		// VP9 requires -b:v 0 for constant quality mode
+		if opts.VideoCodec == "libvpx-vp9" {
+			args = append(args, "-b:v", "0")
+		}
+	} else if opts.VideoBitrate != "" && !isAudioOnly {
 		args = append(args, "-b:v", opts.VideoBitrate)
 	}
 
