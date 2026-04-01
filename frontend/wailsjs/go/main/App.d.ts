@@ -72,6 +72,8 @@ export function PauseAllDownloads():Promise<number>;
 
 export function PauseDownload(arg1:string):Promise<void>;
 
+export function ProbeFile(arg1:string):Promise<converter.MediaInfo>;
+
 export function RemoveDownload(arg1:string):Promise<void>;
 
 export function RemoveHistoryEntry(arg1:string):Promise<void>;

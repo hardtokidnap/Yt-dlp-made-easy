@@ -735,6 +735,10 @@ async function renderConvertTab() {
                             </select>
                         </div>
                     ` : ''}
+                    <div id="media-info-panel" class="hidden mt-3 p-3 bg-gray-800/50 rounded border border-gray-700">
+                        <div id="media-info-grid" class="grid grid-cols-3 gap-x-4 gap-y-2 text-sm">
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -845,6 +849,20 @@ async function renderConvertTab() {
                         </div>
                     </div>
 
+                    <div id="quality-slider-section">
+                        <label class="block text-sm font-medium mb-2">Quality</label>
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs text-gray-400 whitespace-nowrap">Smallest File</span>
+                            <input type="range" id="convert-crf" min="1" max="14" value="9" step="1"
+                                   class="flex-1 accent-blue-500 opacity-40" oninput="window.onCrfSliderChange(this.value)">
+                            <span class="text-xs text-gray-400 whitespace-nowrap">Best Quality</span>
+                        </div>
+                        <div class="flex justify-between items-center mt-1">
+                            <span class="text-xs text-gray-500" id="crf-label">CRF: Off (using bitrate)</span>
+                            <button type="button" onclick="window.resetCrfSlider()" class="text-xs text-gray-500 hover:text-gray-300 hidden" id="crf-reset-btn">Reset (use bitrate)</button>
+                        </div>
+                    </div>
+
                     <div>
                         <label class="block text-sm font-medium mb-2">Custom FFmpeg Arguments</label>
                         <input type="text" id="convert-custom-args" class="input-field" placeholder="e.g. -ss 00:01:00 -t 30">
@@ -911,6 +929,74 @@ function syncConversionUI(job) {
     if (duration) duration.textContent = job.duration || '';
 }
 
+// --- Convert Tab Helpers ---
+
+async function probeAndShowInfo(filePath) {
+    const panel = document.getElementById('media-info-panel');
+    const grid = document.getElementById('media-info-grid');
+    if (!panel || !grid) return;
+
+    try {
+        const info = await App.ProbeFile(filePath);
+        state._currentMediaInfo = info;
+
+        const items = [];
+        items.push(`<span class="text-gray-400">Duration</span><span class="text-white col-span-2">${escapeHtml(info.duration || 'N/A')}</span>`);
+
+        if (info.has_video) {
+            items.push(`<span class="text-gray-400">Resolution</span><span class="text-white col-span-2">${info.width}×${info.height}</span>`);
+            items.push(`<span class="text-gray-400">Video</span><span class="text-white col-span-2">${escapeHtml(info.video_codec || 'N/A')}</span>`);
+        } else {
+            items.push(`<span class="text-gray-400">Type</span><span class="text-white col-span-2">Audio only</span>`);
+        }
+
+        if (info.has_audio) {
+            items.push(`<span class="text-gray-400">Audio</span><span class="text-white col-span-2">${escapeHtml(info.audio_codec || 'N/A')}</span>`);
+        }
+
+        items.push(`<span class="text-gray-400">Bitrate</span><span class="text-white col-span-2">${escapeHtml(info.bitrate || 'N/A')}</span>`);
+        items.push(`<span class="text-gray-400">Size</span><span class="text-white col-span-2">${escapeHtml(info.file_size || 'N/A')}</span>`);
+
+        grid.innerHTML = items.join('');
+        panel.classList.remove('hidden');
+
+        // Hide quality slider for audio-only files
+        const qualitySection = document.getElementById('quality-slider-section');
+        if (qualitySection) {
+            qualitySection.style.display = info.has_video ? '' : 'none';
+        }
+    } catch (err) {
+        panel.classList.add('hidden');
+        state._currentMediaInfo = null;
+        addVerboseLog(`Probe failed: ${err}`);
+    }
+}
+
+window.onCrfSliderChange = function(val) {
+    const label = document.getElementById('crf-label');
+    const vbitrateField = document.getElementById('convert-vbitrate');
+    const slider = document.getElementById('convert-crf');
+    const resetBtn = document.getElementById('crf-reset-btn');
+    const crf = 32 - parseInt(val, 10);
+
+    if (label) label.textContent = `CRF: ${crf}`;
+    if (slider) { slider.dataset.active = 'true'; slider.classList.remove('opacity-40'); }
+    if (resetBtn) resetBtn.classList.remove('hidden');
+    if (vbitrateField) { vbitrateField.disabled = true; vbitrateField.value = ''; }
+};
+
+window.resetCrfSlider = function() {
+    const slider = document.getElementById('convert-crf');
+    const label = document.getElementById('crf-label');
+    const vbitrateField = document.getElementById('convert-vbitrate');
+    const resetBtn = document.getElementById('crf-reset-btn');
+
+    if (slider) { slider.value = '9'; slider.dataset.active = ''; slider.classList.add('opacity-40'); }
+    if (label) label.textContent = 'CRF: Off (using bitrate)';
+    if (resetBtn) resetBtn.classList.add('hidden');
+    if (vbitrateField) vbitrateField.disabled = false;
+};
+
 // --- Convert Tab Handlers ---
 
 window.downloadFFmpeg = async function() {
@@ -935,12 +1021,14 @@ window.browseInputFile = async function() {
     const path = await App.BrowseInputFile();
     if (path) {
         document.getElementById('convert-input').value = path;
+        probeAndShowInfo(path);
     }
 };
 
 window.selectRecentDownload = function(path) {
     if (path) {
         document.getElementById('convert-input').value = path;
+        probeAndShowInfo(path);
     }
 };
 
@@ -984,6 +1072,10 @@ window.startConversion = async function() {
         return;
     }
 
+    const crfEl = document.getElementById('convert-crf');
+    const crfActive = crfEl?.dataset.active === 'true';
+    const crf = crfActive ? 32 - parseInt(crfEl.value, 10) : 0;
+
     const opts = {
         input_file:    inputFile,
         output_file:   document.getElementById('convert-output')?.value || '',
@@ -994,6 +1086,7 @@ window.startConversion = async function() {
         video_bitrate: document.getElementById('convert-vbitrate')?.value || '',
         audio_bitrate: document.getElementById('convert-abitrate')?.value || '',
         resolution:    document.getElementById('convert-resolution')?.value || '',
+        crf:           crf,
         custom_args:   document.getElementById('convert-custom-args')?.value || ''
     };
 

@@ -286,6 +286,16 @@ func (a *App) BrowseOutputFile(defaultName string) string {
 	return path
 }
 
+func (a *App) ProbeFile(filePath string) (*converter.MediaInfo, error) {
+	if !converter.IsFFmpegInstalled() {
+		return nil, fmt.Errorf("FFmpeg is not installed. Please download it first.")
+	}
+	if filePath == "" {
+		return nil, fmt.Errorf("no input file selected")
+	}
+	return converter.ProbeFile(filePath)
+}
+
 func (a *App) StartConversion(opts converter.ConversionOptions) (*converter.ConversionJob, error) {
 	if !converter.IsFFmpegInstalled() {
 		return nil, fmt.Errorf("FFmpeg is not installed. Please download it first.")
