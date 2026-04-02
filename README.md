@@ -116,6 +116,9 @@ cd frontend && npm install && cd ..
 
 ## Project Structure
 
+> [!NOTE]
+> Project Structure provided by [Gitingest](https://gitingest.com/hardtokidnap/Yt-dlp-made-easy)
+
 ```
 ├── app.go                         # Wails bridge - all exported methods bind to JS
 ├── main.go                        # Application bootstrap and Wails config
