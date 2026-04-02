@@ -18,7 +18,7 @@ A modern, lightweight GUI wrapper for [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 - **Concurrent downloads** with configurable queue size
 - **Pause and resume** downloads without losing progress
 - **Real-time progress** with speed and ETA display
-- **Persistent queue** — downloads survive app restarts
+- **Persistent queue** - downloads survive app restarts
 - **Playlist support** with individual item tracking
 - **Quality selection** from 360p to 4K
 - **Audio extraction** with format and quality options
@@ -26,9 +26,15 @@ A modern, lightweight GUI wrapper for [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 
 ### Media Conversion
 - **Built-in FFmpeg converter** with automatic FFmpeg download
-- **Quick presets** — Video to MP3, Convert to MP4/MKV/WebM, Extract Audio, FLAC, WAV
-- **Full codec control** — H.264, H.265, VP9, AAC, MP3, Opus, FLAC, and more
-- **Custom FFmpeg arguments** for trimming, filters, and advanced use
+- **Media info preview** - see duration, resolution, codecs, bitrate, and file size before converting
+- **Quick presets** - Video to MP3, Convert to MP4/MKV/WebM, Extract Audio, FLAC, WAV
+- **Platform export presets** - one-click optimization for YouTube, Twitter/X, LinkedIn, and Web Embed
+- **Quality slider** - CRF-based quality control from lossless to maximum compression
+- **Trim and cut** - set start/end times to extract clips with frame-accurate seeking
+- **Batch conversion** - drop or select multiple files, convert them sequentially with per-file progress
+- **Drag-and-drop** - drop files directly onto the converter tab
+- **Full codec control** - H.264, H.265, VP9, AAC, MP3, Opus, FLAC, and more
+- **Custom FFmpeg arguments** for filters and advanced use
 - **Real-time progress** with speed and duration tracking
 - **Convert recent downloads** directly from the queue
 
@@ -52,9 +58,6 @@ A modern, lightweight GUI wrapper for [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 - **Verbose logging** toggle for debugging
 - **Download history** with search, filter, and re-download
 
-> [!NOTE]
-> Download history is currently broken while I work on a solution that can use either sqlite or a simple csv due to bloating possibilities and JSON corruption for users with high usage.
-
 ---
 
 ## Installation
@@ -69,7 +72,7 @@ The application will automatically download yt-dlp on first launch.
 
 ### Prerequisites
 
-- Go 1.21+
+- Go 1.23+
 - [Wails CLI](https://wails.io/docs/gettingstarted/installation)
 - Node.js 18+
 
@@ -101,34 +104,81 @@ cd frontend && npm install && cd ..
 ## Project Structure
 
 ```
-.
-├── app.go                 # Wails application entry and frontend bindings
-├── main.go                # Application bootstrap
-├── open_windows.go        # Platform-specific file/folder opening (Windows)
-├── open_darwin.go         # Platform-specific file/folder opening (macOS)
-├── open_linux.go          # Platform-specific file/folder opening (Linux)
-├── frontend/              # HTML, CSS, JavaScript UI
-│   └── src/
-│       ├── main.js        # Application logic
-│       └── style.css      # Tailwind styles
-└── internal/
-    ├── config/            # Settings management
-    ├── converter/         # FFmpeg conversion engine
-    ├── downloader/        # Queue, item, args, error handling
-    ├── history/           # Download history tracking
-    ├── jsruntime/         # JavaScript runtime detection and management
-    ├── updater/           # yt-dlp version management
-    └── util/              # Shared utilities and paths
+├── app.go                         # Wails bridge - all exported methods bind to JS
+├── main.go                        # Application bootstrap and Wails config
+├── open_windows.go                # Platform-specific file/folder opening (Windows)
+├── open_darwin.go                 # Platform-specific file/folder opening (macOS)
+├── open_linux.go                  # Platform-specific file/folder opening (Linux)
+├── wails.json
+├── frontend/
+│   ├── index.html
+│   ├── package.json
+│   ├── postcss.config.js
+│   ├── tailwind.config.js
+│   ├── src/
+│   │   ├── main.js                # UI logic (tabs, state, event handlers)
+│   │   ├── style.css              # Tailwind + custom component styles
+│   │   ├── app.css                # Base application styles
+│   │   └── assets/
+│   │       └── fonts/
+│   └── wailsjs/                   # Auto-generated Wails bindings
+│       ├── go/
+│       │   ├── models.ts
+│       │   └── main/
+│       │       ├── App.d.ts
+│       │       └── App.js
+│       └── runtime/
+├── internal/
+│   ├── config/
+│   │   └── settings.go            # Settings persistence (JSON)
+│   ├── converter/
+│   │   ├── args.go                # CLI arg builder, presets, time parsing
+│   │   ├── batch.go               # Multi-file sequential batch queue
+│   │   ├── converter.go           # Single-file conversion with progress
+│   │   ├── ffmpeg.go              # FFmpeg/ffprobe path detection and download
+│   │   ├── probe.go               # Media info extraction via ffprobe
+│   │   ├── cmd_windows.go         # Hidden process creation (no console flash)
+│   │   └── cmd_other.go           # Unix process creation
+│   ├── downloader/
+│   │   ├── args.go                # yt-dlp CLI arg builder
+│   │   ├── downloader.go          # Download execution and progress parsing
+│   │   ├── errors.go              # Error classification and recovery suggestions
+│   │   ├── item.go                # Download item model
+│   │   └── queue.go               # Concurrent download queue with persistence
+│   ├── history/
+│   │   └── history.go             # JSONL-backed download history
+│   ├── jsruntime/
+│   │   └── runtime.go             # JS runtime detection (Deno/Node/Bun)
+│   ├── updater/
+│   │   └── updater.go             # yt-dlp version management
+│   └── util/
+│       ├── meta.go                # App name, version, contributors
+│       └── paths.go               # Platform-specific data paths
+└── .github/
+    ├── PULL_REQUEST_TEMPLATE.md
+    ├── ISSUE_TEMPLATE/
+    │   ├── bug_report.md
+    │   └── feature-request.md
+    └── workflows/
+        ├── claude.yaml
+        └── codeql.yml
 ```
+
+
+
 
 ---
 
 ## Configuration
 
-Settings are stored in:
-- **Windows:** `%APPDATA%\ytdlp-easy\settings.json`
-- **macOS:** `~/Library/Application Support/ytdlp-easy/settings.json`
-- **Linux:** `~/.config/ytdlp-easy/settings.json`
+Settings and data are stored in `%LOCALAPPDATA%\ytdlp-easy\`:
+
+| File | Purpose |
+|------|---------|
+| `settings.json` | User preferences and configuration |
+| `history.jsonl` | Download history |
+| `queue.json` | Persisted download queue |
+| `ytdlp.log` | Debug log (when verbose logging is enabled) |
 
 ---
 
@@ -157,6 +207,27 @@ If you see "Could not copy cookie database":
 1. **Close your browser completely** before downloading
 2. **Use a cookies.txt file** instead of browser extraction (works with browser open) see [How do I pass cookies to yt-dlp? - Second to last paragraph](https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp)
 
+### Conversion Issues
+
+**"FFmpeg is not installed"**
+- Open the Convert tab and click "Download FFmpeg" - both FFmpeg and FFprobe are downloaded automatically
+- If the download fails, check your internet connection or firewall - the binaries are fetched from [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds)
+- Binaries are stored in `%LOCALAPPDATA%\ytdlp-easy\ffmpeg\`
+
+**Conversion fails or produces corrupted output**
+- Check the log panel at the bottom of the Convert tab for FFmpeg error messages
+- Verify the input file isn't corrupted by playing it in a media player first
+- Try a different output codec - some codec combinations are incompatible (e.g. VP9 video in an MP4 container)
+- If using custom args, make sure they don't conflict with the preset settings
+
+**Progress stuck at 0%**
+- This can happen with very short files where FFmpeg finishes before reporting progress
+- For trimmed clips, progress is based on the clip duration, not the full file - if the trim times are invalid, progress may not advance
+
+**Batch conversion stops mid-way**
+- Individual file failures don't stop the batch - check the batch progress panel for per-file status
+- If all files fail, the issue is likely with the output settings rather than the input files
+
 ---
 
 ## Security Notice
@@ -169,11 +240,11 @@ If you see "Could not copy cookie database":
 
 | Component | Technology |
 |-----------|------------|
-| Backend | Go 1.21+ |
+| Backend | Go 1.23+ |
 | Frontend | HTML5, JavaScript, Tailwind CSS |
 | Framework | [Wails v2](https://wails.io) |
 | Downloader | [yt-dlp](https://github.com/yt-dlp/yt-dlp) |
-| Converter | [FFmpeg](https://ffmpeg.org) (auto-downloaded) |
+| Converter | [FFmpeg](https://ffmpeg.org) + [FFprobe](https://ffmpeg.org) (auto-downloaded) |
 
 ---
 
