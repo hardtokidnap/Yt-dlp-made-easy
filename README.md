@@ -12,6 +12,7 @@ A modern, lightweight GUI wrapper for [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 
 ---
 
+
 ## Features
 
 ### Download Management
@@ -23,6 +24,7 @@ A modern, lightweight GUI wrapper for [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 - **Quality selection** from 360p to 4K
 - **Audio extraction** with format and quality options
 - **Open Folder** button to reveal downloaded files in your file manager
+<img width="1016" height="1056" alt="image" src="https://github.com/user-attachments/assets/67a4ae3f-fe77-4899-a20f-d2eae47d6fe5" />
 
 ### Media Conversion
 - **Built-in FFmpeg converter** with automatic FFmpeg download
@@ -37,17 +39,24 @@ A modern, lightweight GUI wrapper for [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 - **Custom FFmpeg arguments** for filters and advanced use
 - **Real-time progress** with speed and duration tracking
 - **Convert recent downloads** directly from the queue
+<img width="970" height="1392" alt="image" src="https://github.com/user-attachments/assets/e654da25-727a-47b3-bb3e-f2a2c6402504" />
+
 
 ### Smart Error Handling
 - **Automatic error classification** detects 403 blocks, rate limits, age restrictions, and more
 - **Guided recovery** with actionable fix suggestions
 - **One-click fixes** that apply settings and retry automatically
 
+
 ### Authentication
 - **Browser cookie import** from Chrome, Firefox, Edge, Brave
 - **Cookies file support** for explicit authentication
 - **PO Token support** for age-restricted content
 - **Player client switching** (web, mweb, ios, android) to bypass blocks
+<img width="918" height="605" alt="image" src="https://github.com/user-attachments/assets/bd97994e-cc25-41b2-af3c-0e2db1638115" />
+<img width="915" height="353" alt="image" src="https://github.com/user-attachments/assets/cf6886f1-efa6-49a3-bf73-55e7e7b673f6" />
+
+
 
 ### Advanced Options
 - **SponsorBlock integration** to skip sponsored segments
@@ -57,6 +66,8 @@ A modern, lightweight GUI wrapper for [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 - **Clipboard monitoring** for automatic URL detection
 - **Verbose logging** toggle for debugging
 - **Download history** with search, filter, and re-download
+<img width="927" height="371" alt="image" src="https://github.com/user-attachments/assets/e3478045-0493-4314-93b8-2189b0695859" />
+
 
 ---
 
