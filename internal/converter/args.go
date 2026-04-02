@@ -25,16 +25,19 @@ type ConversionOptions struct {
 
 // Preset is a named collection of conversion settings.
 type Preset struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	// Settings applied when this preset is selected
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Description  string `json:"description"`
 	OutputFormat string `json:"output_format"`
 	VideoCodec   string `json:"video_codec"`
 	AudioCodec   string `json:"audio_codec"`
 	Preset       string `json:"preset"`
 	AudioBitrate string `json:"audio_bitrate"`
 	AudioOnly    bool   `json:"audio_only"`
+	CRF          int    `json:"crf,omitempty"`
+	Resolution   string `json:"resolution,omitempty"`
+	ExtraArgs    string `json:"extra_args,omitempty"`
+	IsPlatform   bool   `json:"is_platform"`
 }
 
 // GetPresets returns the built-in conversion presets.
@@ -101,6 +104,61 @@ func GetPresets() []Preset {
 			OutputFormat: "wav",
 			AudioCodec:   "pcm_s16le",
 			AudioOnly:    true,
+		},
+		// Platform-optimized presets
+		{
+			ID:           "platform_youtube",
+			Name:         "YouTube",
+			Description:  "Optimized for YouTube (H.264 High, CRF 18, slow)",
+			OutputFormat: "mp4",
+			VideoCodec:   "libx264",
+			AudioCodec:   "aac",
+			Preset:       "slow",
+			AudioBitrate: "192k",
+			CRF:          18,
+			ExtraArgs:    "-movflags +faststart -profile:v high -level 4.0 -ar 48000",
+			IsPlatform:   true,
+		},
+		{
+			ID:           "platform_twitter",
+			Name:         "Twitter / X",
+			Description:  "Optimized for Twitter/X (H.264, 720p max, CRF 24)",
+			OutputFormat: "mp4",
+			VideoCodec:   "libx264",
+			AudioCodec:   "aac",
+			Preset:       "medium",
+			AudioBitrate: "128k",
+			CRF:          24,
+			Resolution:   "-1:720",
+			ExtraArgs:    "-movflags +faststart -profile:v main -level 3.1 -ar 44100",
+			IsPlatform:   true,
+		},
+		{
+			ID:           "platform_linkedin",
+			Name:         "LinkedIn",
+			Description:  "Optimized for LinkedIn (H.264 Main, CRF 22)",
+			OutputFormat: "mp4",
+			VideoCodec:   "libx264",
+			AudioCodec:   "aac",
+			Preset:       "medium",
+			AudioBitrate: "192k",
+			CRF:          22,
+			ExtraArgs:    "-movflags +faststart -profile:v main -ar 48000",
+			IsPlatform:   true,
+		},
+		{
+			ID:           "platform_web",
+			Name:         "Web Embed",
+			Description:  "Optimized for web playback (H.264 Baseline, 720p, CRF 26)",
+			OutputFormat: "mp4",
+			VideoCodec:   "libx264",
+			AudioCodec:   "aac",
+			Preset:       "medium",
+			AudioBitrate: "128k",
+			CRF:          26,
+			Resolution:   "-1:720",
+			ExtraArgs:    "-movflags +faststart -profile:v baseline -level 3.0",
+			IsPlatform:   true,
 		},
 	}
 }

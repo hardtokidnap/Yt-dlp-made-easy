@@ -759,11 +759,27 @@ async function renderConvertTab() {
                 <p id="trim-error" class="text-xs text-red-400 mt-1 hidden"></p>
             </div>
 
-            <!-- Presets -->
+            <!-- Platform Presets -->
+            ${presets.some(p => p.is_platform) ? `
             <div class="card">
-                <h3 class="text-lg font-semibold mb-4">Quick Presets</h3>
+                <h3 class="text-lg font-semibold mb-4">Optimize for Platform</h3>
                 <div class="flex flex-wrap gap-2">
-                    ${presets.map(p => `
+                    ${presets.filter(p => p.is_platform).map(p => `
+                        <button onclick="window.applyConvertPreset('${p.id}')"
+                                class="bg-blue-700 hover:bg-blue-600 text-sm px-3 py-2 rounded transition-colors font-medium"
+                                title="${escapeHtml(p.description)}">
+                            ${escapeHtml(p.name)}
+                        </button>
+                    `).join('')}
+                </div>
+            </div>
+            ` : ''}
+
+            <!-- Format Presets -->
+            <div class="card">
+                <h3 class="text-lg font-semibold mb-4">Format Presets</h3>
+                <div class="flex flex-wrap gap-2">
+                    ${presets.filter(p => !p.is_platform).map(p => `
                         <button onclick="window.applyConvertPreset('${p.id}')"
                                 class="bg-gray-700 hover:bg-gray-600 text-sm px-3 py-2 rounded transition-colors"
                                 title="${escapeHtml(p.description)}">
@@ -1100,6 +1116,23 @@ window.applyConvertPreset = function(presetId) {
     setField('convert-acodec', 'audio_codec');
     setField('convert-preset', 'preset');
     setField('convert-abitrate', 'audio_bitrate');
+    setField('convert-resolution', 'resolution');
+
+    // Set CRF slider if preset has a CRF value
+    if (preset.crf > 0) {
+        const slider = document.getElementById('convert-crf');
+        const sliderVal = 32 - preset.crf;
+        if (slider) {
+            slider.value = String(sliderVal);
+            window.onCrfSliderChange(sliderVal);
+        }
+    }
+
+    // Populate custom args with platform-specific flags so user can see and modify
+    if (preset.extra_args) {
+        const customArgsEl = document.getElementById('convert-custom-args');
+        if (customArgsEl) customArgsEl.value = preset.extra_args;
+    }
 
     addVerboseLog(`Applied preset: ${preset.name}`);
 };
