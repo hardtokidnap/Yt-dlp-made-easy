@@ -119,6 +119,17 @@ func (bq *BatchQueue) Start(ctx context.Context, opts ConversionOptions) {
 			}
 		}
 
+		if fileOpts.EndTime != "" {
+			startSec := 0.0
+			if fileOpts.StartTime != "" {
+				startSec = ParseTimeToSeconds(fileOpts.StartTime)
+			}
+			endSec := ParseTimeToSeconds(fileOpts.EndTime)
+			if endSec > startSec {
+				c.SetEffectiveDuration(endSec - startSec)
+			}
+		}
+
 		bq.mu.Lock()
 		bq.converter = c
 		bq.mu.Unlock()
