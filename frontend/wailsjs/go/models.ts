@@ -207,6 +207,9 @@ export namespace converter {
 	    video_bitrate: string;
 	    audio_bitrate: string;
 	    resolution: string;
+	    crf: number;
+	    start_time: string;
+	    end_time: string;
 	    custom_args: string;
 	
 	    static createFrom(source: any = {}) {
@@ -224,7 +227,40 @@ export namespace converter {
 	        this.video_bitrate = source["video_bitrate"];
 	        this.audio_bitrate = source["audio_bitrate"];
 	        this.resolution = source["resolution"];
+	        this.crf = source["crf"];
+	        this.start_time = source["start_time"];
+	        this.end_time = source["end_time"];
 	        this.custom_args = source["custom_args"];
+	    }
+	}
+	export class MediaInfo {
+	    duration: string;
+	    duration_sec: number;
+	    width: number;
+	    height: number;
+	    video_codec: string;
+	    audio_codec: string;
+	    bitrate: string;
+	    file_size: string;
+	    has_video: boolean;
+	    has_audio: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new MediaInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.duration = source["duration"];
+	        this.duration_sec = source["duration_sec"];
+	        this.width = source["width"];
+	        this.height = source["height"];
+	        this.video_codec = source["video_codec"];
+	        this.audio_codec = source["audio_codec"];
+	        this.bitrate = source["bitrate"];
+	        this.file_size = source["file_size"];
+	        this.has_video = source["has_video"];
+	        this.has_audio = source["has_audio"];
 	    }
 	}
 	export class Preset {
@@ -237,6 +273,10 @@ export namespace converter {
 	    preset: string;
 	    audio_bitrate: string;
 	    audio_only: boolean;
+	    crf?: number;
+	    resolution?: string;
+	    extra_args?: string;
+	    is_platform: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Preset(source);
@@ -253,6 +293,10 @@ export namespace converter {
 	        this.preset = source["preset"];
 	        this.audio_bitrate = source["audio_bitrate"];
 	        this.audio_only = source["audio_only"];
+	        this.crf = source["crf"];
+	        this.resolution = source["resolution"];
+	        this.extra_args = source["extra_args"];
+	        this.is_platform = source["is_platform"];
 	    }
 	}
 

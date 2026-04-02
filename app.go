@@ -26,7 +26,8 @@ type App struct {
 	queue     *downloader.Queue
 	history   *history.History
 	updater   *updater.Updater
-	converter *converter.Converter
+	converter   *converter.Converter
+	batchQueue  *converter.BatchQueue
 }
 
 func NewApp() *App {
@@ -111,6 +112,12 @@ func (a *App) startup(ctx context.Context) {
 }
 
 func (a *App) shutdown(ctx context.Context) {
+	if a.batchQueue != nil {
+		a.batchQueue.Cancel()
+	}
+	if a.converter != nil {
+		a.converter.Cancel()
+	}
 	if a.queue != nil {
 		a.queue.Shutdown()
 	}
@@ -286,6 +293,16 @@ func (a *App) BrowseOutputFile(defaultName string) string {
 	return path
 }
 
+func (a *App) ProbeFile(filePath string) (*converter.MediaInfo, error) {
+	if !converter.IsFFmpegInstalled() {
+		return nil, fmt.Errorf("FFmpeg is not installed. Please download it first.")
+	}
+	if filePath == "" {
+		return nil, fmt.Errorf("no input file selected")
+	}
+	return converter.ProbeFile(filePath)
+}
+
 func (a *App) StartConversion(opts converter.ConversionOptions) (*converter.ConversionJob, error) {
 	if !converter.IsFFmpegInstalled() {
 		return nil, fmt.Errorf("FFmpeg is not installed. Please download it first.")
@@ -313,6 +330,20 @@ func (a *App) StartConversion(opts converter.ConversionOptions) (*converter.Conv
 	c.OnLog = func(line string) {
 		wailsruntime.EventsEmit(a.ctx, "convert:log", line)
 	}
+
+	// When trimming, set the effective duration so progress is based on clip length.
+	// With -ss before -i, ffmpeg's time= output starts from 0 and counts up to the clip length.
+	if opts.EndTime != "" {
+		startSec := 0.0
+		if opts.StartTime != "" {
+			startSec = converter.ParseTimeToSeconds(opts.StartTime)
+		}
+		endSec := converter.ParseTimeToSeconds(opts.EndTime)
+		if endSec > startSec {
+			c.SetEffectiveDuration(endSec - startSec)
+		}
+	}
+
 	a.converter = c
 
 	go func() {
@@ -330,6 +361,65 @@ func (a *App) CancelConversion() {
 	if a.converter != nil {
 		a.converter.Cancel()
 		a.converter = nil
+	}
+}
+
+func (a *App) BrowseMultipleInputFiles() []string {
+	paths, err := wailsruntime.OpenMultipleFilesDialog(a.ctx, wailsruntime.OpenDialogOptions{
+		Title: "Select Input Files",
+		Filters: []wailsruntime.FileFilter{
+			{DisplayName: "Media Files", Pattern: "*.mp4;*.mkv;*.webm;*.avi;*.mov;*.flv;*.wmv;*.mp3;*.m4a;*.aac;*.ogg;*.opus;*.flac;*.wav"},
+			{DisplayName: "All Files", Pattern: "*.*"},
+		},
+	})
+	if err != nil {
+		return nil
+	}
+	return paths
+}
+
+func (a *App) StartBatchConversion(files []string, opts converter.ConversionOptions) error {
+	if !converter.IsFFmpegInstalled() {
+		return fmt.Errorf("FFmpeg is not installed. Please download it first.")
+	}
+	if len(files) == 0 {
+		return fmt.Errorf("no input files selected")
+	}
+
+	// Only one conversion pipeline at a time — stop anything in-flight
+	if a.converter != nil {
+		a.converter.Cancel()
+		a.converter = nil
+	}
+	if a.batchQueue != nil {
+		a.batchQueue.Cancel()
+	}
+
+	bq := converter.NewBatchQueue(files, opts)
+	bq.OnProgress = func(snap *converter.BatchSnapshot) {
+		wailsruntime.EventsEmit(a.ctx, "convert:batch:progress", snap)
+	}
+	bq.OnLog = func(line string) {
+		wailsruntime.EventsEmit(a.ctx, "convert:log", line)
+	}
+	a.batchQueue = bq
+
+	go func() {
+		bq.Start(a.ctx, opts)
+		// Surface any per-job failures that weren't already emitted via progress events
+		if bq.Failed > 0 {
+			wailsruntime.EventsEmit(a.ctx, "convert:error",
+				fmt.Sprintf("Batch finished with %d failed file(s)", bq.Failed))
+		}
+	}()
+
+	return nil
+}
+
+func (a *App) CancelBatchConversion() {
+	if a.batchQueue != nil {
+		a.batchQueue.Cancel()
+		a.batchQueue = nil
 	}
 }
 

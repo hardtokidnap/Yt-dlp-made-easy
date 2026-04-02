@@ -60,4 +60,12 @@
   .log-output {
     @apply bg-black text-green-400 p-4 rounded-lg font-mono text-sm h-full overflow-y-auto;
   }
+
+  .drop-zone {
+    @apply border-2 border-dashed border-transparent transition-colors duration-200;
+  }
+
+  .drop-zone.wails-drop-target-active {
+    @apply border-blue-500 bg-blue-500/10;
+  }
 }
