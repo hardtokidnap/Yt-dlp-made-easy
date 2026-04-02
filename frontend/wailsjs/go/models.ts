@@ -273,11 +273,15 @@ export namespace converter {
 	    preset: string;
 	    audio_bitrate: string;
 	    audio_only: boolean;
-	
+	    crf?: number;
+	    resolution?: string;
+	    extra_args?: string;
+	    is_platform: boolean;
+
 	    static createFrom(source: any = {}) {
 	        return new Preset(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -289,6 +293,10 @@ export namespace converter {
 	        this.preset = source["preset"];
 	        this.audio_bitrate = source["audio_bitrate"];
 	        this.audio_only = source["audio_only"];
+	        this.crf = source["crf"];
+	        this.resolution = source["resolution"];
+	        this.extra_args = source["extra_args"];
+	        this.is_platform = source["is_platform"];
 	    }
 	}
 
