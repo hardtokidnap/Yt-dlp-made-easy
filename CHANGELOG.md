@@ -10,7 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - **Media info preview** - selecting an input file in the converter now shows duration, resolution, codecs, bitrate, and file size via ffprobe
-- **Quality slider** - CRF-based quality control with real-time label (Lossless → Placeholder) that auto-disables when using bitrate mode
+- **Quality slider** - CRF-based quality control with real-time label (Lossless → Lowest Quality) that auto-disables when using bitrate mode
 - **Trim/Cut support** - start and end time inputs with duration display; uses input-side seek (`-ss` before `-i`) for fast, accurate trimming
 - **Platform export presets** - one-click optimization for YouTube, Twitter/X, LinkedIn, and Web Embed with tuned profiles (codec, CRF, resolution, audio rate, movflags)
 - **Drag-and-drop file input** - drop media files onto the converter input card to load them instantly
