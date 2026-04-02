@@ -65,19 +65,22 @@ func ProbeFile(filePath string) (*MediaInfo, error) {
 	info := &MediaInfo{}
 
 	if probe.Format.Duration != "" {
-		secs, _ := strconv.ParseFloat(probe.Format.Duration, 64)
-		info.DurationSec = secs
-		info.Duration = formatDuration(secs)
+		if secs, err := strconv.ParseFloat(probe.Format.Duration, 64); err == nil {
+			info.DurationSec = secs
+			info.Duration = formatDuration(secs)
+		}
 	}
 
 	if probe.Format.Size != "" {
-		bytes, _ := strconv.ParseInt(probe.Format.Size, 10, 64)
-		info.FileSize = formatFileSize(bytes)
+		if bytes, err := strconv.ParseInt(probe.Format.Size, 10, 64); err == nil {
+			info.FileSize = formatFileSize(bytes)
+		}
 	}
 
 	if probe.Format.BitRate != "" {
-		bps, _ := strconv.ParseInt(probe.Format.BitRate, 10, 64)
-		info.Bitrate = formatBitrate(bps)
+		if bps, err := strconv.ParseInt(probe.Format.BitRate, 10, 64); err == nil {
+			info.Bitrate = formatBitrate(bps)
+		}
 	}
 
 	// Use only the first video/audio stream — files can have multiple (e.g. embedded album art)
@@ -95,8 +98,9 @@ func ProbeFile(filePath string) (*MediaInfo, error) {
 				info.HasAudio = true
 				info.AudioCodec = strings.ToUpper(s.CodecName)
 				if s.BitRate != "" {
-					bps, _ := strconv.ParseInt(s.BitRate, 10, 64)
-					info.AudioBitrate = formatBitrate(bps)
+					if bps, err := strconv.ParseInt(s.BitRate, 10, 64); err == nil {
+						info.AudioBitrate = formatBitrate(bps)
+					}
 				}
 			}
 		}
