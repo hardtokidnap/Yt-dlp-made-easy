@@ -3,6 +3,7 @@ package converter
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -50,7 +51,7 @@ func NewBatchQueue(files []string, opts ConversionOptions) *BatchQueue {
 		output := filepath.Join(filepath.Dir(f), base+"_converted."+ext)
 
 		jobs[i] = &BatchJob{
-			ID:         fmt.Sprintf("batch_%d_%d", time.Now().UnixMilli(), i),
+			ID:         fmt.Sprintf("batch_%d_%d_%d", time.Now().UnixMilli(), i, rand.Intn(10000)),
 			InputFile:  f,
 			OutputFile: output,
 			Status:     StatusPending,
