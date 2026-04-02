@@ -680,12 +680,11 @@ function getStatusText(item) {
 async function renderConvertTab() {
     const content = document.getElementById('tab-content');
 
-    let ffmpegInstalled = false;
     try {
-        ffmpegInstalled = await App.IsFFmpegInstalled();
+        state.ffmpegInstalled = await App.IsFFmpegInstalled();
     } catch (_) { /* ignore */ }
 
-    if (!ffmpegInstalled) {
+    if (!state.ffmpegInstalled) {
         content.innerHTML = `
             <div class="max-w-4xl mx-auto space-y-6">
                 <div class="card">
@@ -979,12 +978,15 @@ async function probeAndShowInfo(filePath) {
     if (!panel || !grid) return;
 
     const ext = filePath.split('.').pop().toLowerCase();
-    if (!SUPPORTED_MEDIA_EXTENSIONS.has(ext)) {
+    const hasExtension = filePath.includes('.') && ext !== filePath.toLowerCase();
+    if (!hasExtension || !SUPPORTED_MEDIA_EXTENSIONS.has(ext)) {
         panel.classList.add('hidden');
         state._currentMediaInfo = null;
         const trimSection = document.getElementById('trim-section');
         if (trimSection) trimSection.classList.add('hidden');
-        alert(`"${ext.toUpperCase()}" files are not supported. Please select a video or audio file.`);
+        alert(hasExtension
+            ? `"${ext.toUpperCase()}" files are not supported. Please select a video or audio file.`
+            : 'Please select a file with a supported video or audio extension.');
         const inputEl = document.getElementById('convert-input');
         if (inputEl) inputEl.value = '';
         return;
@@ -1177,9 +1179,13 @@ window.applyConvertPreset = function(presetId) {
 // --- Batch Conversion Handlers ---
 
 window.browseMultipleFiles = async function() {
-    const paths = await App.BrowseMultipleInputFiles();
-    if (paths && paths.length > 0) {
-        addBatchFiles(paths);
+    try {
+        const paths = await App.BrowseMultipleInputFiles();
+        if (paths && paths.length > 0) {
+            addBatchFiles(paths);
+        }
+    } catch (err) {
+        addLog(`Browse files error: ${err}`);
     }
 };
 
@@ -1236,6 +1242,10 @@ window.removeBatchFile = function(idx) {
     renderBatchFileList();
     if (state.batchFiles.length === 0) {
         document.getElementById('convert-input').value = '';
+    } else if (state.batchFiles.length === 1) {
+        const inputEl = document.getElementById('convert-input');
+        if (inputEl) inputEl.value = state.batchFiles[0];
+        probeAndShowInfo(state.batchFiles[0]);
     }
 };
 
@@ -1408,7 +1418,7 @@ window.startConversion = async function() {
     };
 
     try {
-        if (state.batchFiles.length > 1) {
+        if (isBatch) {
             // Batch mode
             await App.StartBatchConversion(state.batchFiles, opts);
             addLog(`Batch converting ${state.batchFiles.length} files`);

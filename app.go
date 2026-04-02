@@ -112,6 +112,12 @@ func (a *App) startup(ctx context.Context) {
 }
 
 func (a *App) shutdown(ctx context.Context) {
+	if a.batchQueue != nil {
+		a.batchQueue.Cancel()
+	}
+	if a.converter != nil {
+		a.converter.Cancel()
+	}
 	if a.queue != nil {
 		a.queue.Shutdown()
 	}
@@ -398,7 +404,14 @@ func (a *App) StartBatchConversion(files []string, opts converter.ConversionOpti
 	}
 	a.batchQueue = bq
 
-	go bq.Start(a.ctx, opts)
+	go func() {
+		bq.Start(a.ctx, opts)
+		// Surface any per-job failures that weren't already emitted via progress events
+		if bq.Failed > 0 {
+			wailsruntime.EventsEmit(a.ctx, "convert:error",
+				fmt.Sprintf("Batch finished with %d failed file(s)", bq.Failed))
+		}
+	}()
 
 	return nil
 }
