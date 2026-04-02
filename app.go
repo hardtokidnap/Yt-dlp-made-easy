@@ -26,7 +26,8 @@ type App struct {
 	queue     *downloader.Queue
 	history   *history.History
 	updater   *updater.Updater
-	converter *converter.Converter
+	converter   *converter.Converter
+	batchQueue  *converter.BatchQueue
 }
 
 func NewApp() *App {
@@ -354,6 +355,58 @@ func (a *App) CancelConversion() {
 	if a.converter != nil {
 		a.converter.Cancel()
 		a.converter = nil
+	}
+}
+
+func (a *App) BrowseMultipleInputFiles() []string {
+	paths, err := wailsruntime.OpenMultipleFilesDialog(a.ctx, wailsruntime.OpenDialogOptions{
+		Title: "Select Input Files",
+		Filters: []wailsruntime.FileFilter{
+			{DisplayName: "Media Files", Pattern: "*.mp4;*.mkv;*.webm;*.avi;*.mov;*.flv;*.wmv;*.mp3;*.m4a;*.aac;*.ogg;*.opus;*.flac;*.wav"},
+			{DisplayName: "All Files", Pattern: "*.*"},
+		},
+	})
+	if err != nil {
+		return nil
+	}
+	return paths
+}
+
+func (a *App) StartBatchConversion(files []string, opts converter.ConversionOptions) error {
+	if !converter.IsFFmpegInstalled() {
+		return fmt.Errorf("FFmpeg is not installed. Please download it first.")
+	}
+	if len(files) == 0 {
+		return fmt.Errorf("no input files selected")
+	}
+
+	// Only one conversion pipeline at a time — stop anything in-flight
+	if a.converter != nil {
+		a.converter.Cancel()
+		a.converter = nil
+	}
+	if a.batchQueue != nil {
+		a.batchQueue.Cancel()
+	}
+
+	bq := converter.NewBatchQueue(files, opts)
+	bq.OnProgress = func(snap *converter.BatchSnapshot) {
+		wailsruntime.EventsEmit(a.ctx, "convert:batch:progress", snap)
+	}
+	bq.OnLog = func(line string) {
+		wailsruntime.EventsEmit(a.ctx, "convert:log", line)
+	}
+	a.batchQueue = bq
+
+	go bq.Start(a.ctx, opts)
+
+	return nil
+}
+
+func (a *App) CancelBatchConversion() {
+	if a.batchQueue != nil {
+		a.batchQueue.Cancel()
+		a.batchQueue = nil
 	}
 }
 
