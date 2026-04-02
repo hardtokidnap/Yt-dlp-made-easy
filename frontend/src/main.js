@@ -1,5 +1,5 @@
 import './style.css';
-import {EventsOn} from '../wailsjs/runtime/runtime';
+import {EventsOn, OnFileDrop} from '../wailsjs/runtime/runtime';
 import * as App from '../wailsjs/go/main/App';
 
 // State management
@@ -719,11 +719,11 @@ async function renderConvertTab() {
     content.innerHTML = `
         <div class="max-w-4xl mx-auto space-y-6">
             <!-- Input File -->
-            <div class="card">
+            <div class="card drop-zone" id="convert-drop-zone" style="--wails-drop-target: drop">
                 <h3 class="text-lg font-semibold mb-4">Input</h3>
                 <div class="space-y-3">
                     <div class="flex space-x-2">
-                        <input type="text" id="convert-input" class="input-field flex-1" placeholder="Select a media file..." readonly>
+                        <input type="text" id="convert-input" class="input-field flex-1" placeholder="Select or drop a media file..." readonly>
                         <button onclick="window.browseInputFile()" class="btn-secondary">Browse</button>
                     </div>
                     ${recentOptions ? `
@@ -1126,16 +1126,16 @@ window.applyConvertPreset = function(presetId) {
             slider.value = String(sliderVal);
             window.onCrfSliderChange(sliderVal);
         }
+    } else {
+            window.resetCrfSlider();
     }
+};
 
     // Populate custom args with platform-specific flags so user can see and modify
-    if (preset.extra_args) {
-        const customArgsEl = document.getElementById('convert-custom-args');
-        if (customArgsEl) customArgsEl.value = preset.extra_args;
-    }
+    const customArgsEl = document.getElementById('convert-custom-args');
+    if (customArgsEl) customArgsEl.value = preset.extra_args || '';
 
     addVerboseLog(`Applied preset: ${preset.name}`);
-};
 
 window.startConversion = async function() {
     const inputFile = document.getElementById('convert-input')?.value;
@@ -2388,6 +2388,16 @@ function setupEventListeners() {
         const el = document.getElementById('ffmpeg-progress');
         if (el) { el.textContent = message; el.classList.remove('hidden'); }
     });
+
+    // File drag-and-drop for the convert tab
+    OnFileDrop((x, y, paths) => {
+        if (state.currentTab !== 'convert' || !paths || paths.length === 0) return;
+        const inputEl = document.getElementById('convert-input');
+        if (inputEl) {
+            inputEl.value = paths[0];
+            probeAndShowInfo(paths[0]);
+        }
+    }, true);
 
     EventsOn('jsruntime:progress', (message) => {
         addVerboseLog(`jsruntime: ${message}`);
