@@ -11,7 +11,9 @@ const state = {
     settings: null,
     logs: [],
     conversion: null,
-    ffmpegInstalled: false
+    ffmpegInstalled: false,
+    batchFiles: [],
+    batchQueue: null
 };
 
 // Tab definitions
@@ -725,7 +727,9 @@ async function renderConvertTab() {
                     <div class="flex space-x-2">
                         <input type="text" id="convert-input" class="input-field flex-1" placeholder="Select or drop a media file..." readonly>
                         <button onclick="window.browseInputFile()" class="btn-secondary">Browse</button>
+                        <button onclick="window.browseMultipleFiles()" class="btn-secondary" title="Select multiple files for batch conversion">Add Files</button>
                     </div>
+                    <div id="batch-file-list" class="hidden mt-2 max-h-40 overflow-y-auto space-y-1"></div>
                     ${recentOptions ? `
                         <div>
                             <label class="block text-sm text-gray-400 mb-1">Or pick a recent download:</label>
@@ -861,10 +865,10 @@ async function renderConvertTab() {
                         <div>
                             <label class="block text-sm font-medium mb-2">Audio Bitrate</label>
                             <select id="convert-abitrate" class="select-field w-full">
-                                <option value="">Default</option>
+                                <option value="">Source</option>
                                 <option value="320k">320k</option>
                                 <option value="256k">256k</option>
-                                <option value="192k" selected>192k</option>
+                                <option value="192k">192k</option>
                                 <option value="128k">128k</option>
                                 <option value="96k">96k</option>
                             </select>
@@ -964,10 +968,27 @@ function syncConversionUI(job) {
 
 // --- Convert Tab Helpers ---
 
+const SUPPORTED_MEDIA_EXTENSIONS = new Set([
+    'mp4','mkv','webm','avi','mov','flv','wmv','ts','m2ts','m4v',
+    'mp3','m4a','aac','ogg','opus','flac','wav','wma','weba'
+]);
+
 async function probeAndShowInfo(filePath) {
     const panel = document.getElementById('media-info-panel');
     const grid = document.getElementById('media-info-grid');
     if (!panel || !grid) return;
+
+    const ext = filePath.split('.').pop().toLowerCase();
+    if (!SUPPORTED_MEDIA_EXTENSIONS.has(ext)) {
+        panel.classList.add('hidden');
+        state._currentMediaInfo = null;
+        const trimSection = document.getElementById('trim-section');
+        if (trimSection) trimSection.classList.add('hidden');
+        alert(`"${ext.toUpperCase()}" files are not supported. Please select a video or audio file.`);
+        const inputEl = document.getElementById('convert-input');
+        if (inputEl) inputEl.value = '';
+        return;
+    }
 
     try {
         const info = await App.ProbeFile(filePath);
@@ -984,7 +1005,9 @@ async function probeAndShowInfo(filePath) {
         }
 
         if (info.has_audio) {
-            items.push(`<span class="text-gray-400">Audio</span><span class="text-white col-span-2">${escapeHtml(info.audio_codec || 'N/A')}</span>`);
+            const audioParts = [escapeHtml(info.audio_codec || 'N/A')];
+            if (info.audio_bitrate) audioParts.push(escapeHtml(info.audio_bitrate));
+            items.push(`<span class="text-gray-400">Audio</span><span class="text-white col-span-2">${audioParts.join(' · ')}</span>`);
         }
 
         items.push(`<span class="text-gray-400">Bitrate</span><span class="text-white col-span-2">${escapeHtml(info.bitrate || 'N/A')}</span>`);
@@ -993,13 +1016,28 @@ async function probeAndShowInfo(filePath) {
         grid.innerHTML = items.join('');
         panel.classList.remove('hidden');
 
-        // Hide quality slider for audio-only files
         const qualitySection = document.getElementById('quality-slider-section');
         if (qualitySection) {
             qualitySection.style.display = info.has_video ? '' : 'none';
         }
 
-        // Show trim section, clear any previous error, and set end time placeholder
+        // Default output options to source quality so conversions don't accidentally downscale
+        const resSelect = document.getElementById('convert-resolution');
+        if (resSelect && info.has_video && info.height > 0) {
+            const match = Array.from(resSelect.options).find(o => o.value === `-1:${info.height}`);
+            resSelect.value = match ? match.value : '';
+        }
+
+        const abSelect = document.getElementById('convert-abitrate');
+        if (abSelect && info.audio_bitrate) {
+            const srcKbps = parseInt(info.audio_bitrate, 10);
+            if (srcKbps > 0) {
+                const opts = [320, 256, 192, 128, 96];
+                const closest = opts.reduce((a, b) => Math.abs(b - srcKbps) < Math.abs(a - srcKbps) ? b : a);
+                abSelect.value = `${closest}k`;
+            }
+        }
+
         const trimSection = document.getElementById('trim-section');
         if (trimSection) trimSection.classList.remove('hidden');
         const trimError = document.getElementById('trim-error');
@@ -1127,26 +1165,202 @@ window.applyConvertPreset = function(presetId) {
             window.onCrfSliderChange(sliderVal);
         }
     } else {
-            window.resetCrfSlider();
+        window.resetCrfSlider();
     }
-};
 
     // Populate custom args with platform-specific flags so user can see and modify
     const customArgsEl = document.getElementById('convert-custom-args');
     if (customArgsEl) customArgsEl.value = preset.extra_args || '';
 
     addVerboseLog(`Applied preset: ${preset.name}`);
+};
+// --- Batch Conversion Handlers ---
+
+window.browseMultipleFiles = async function() {
+    const paths = await App.BrowseMultipleInputFiles();
+    if (paths && paths.length > 0) {
+        addBatchFiles(paths);
+    }
+};
+
+function addBatchFiles(paths) {
+    const unique = paths.filter(p => !state.batchFiles.includes(p));
+    state.batchFiles.push(...unique);
+    renderBatchFileList();
+
+    // If only one file total, also set it as the main input
+    if (state.batchFiles.length === 1) {
+        const inputEl = document.getElementById('convert-input');
+        if (inputEl) inputEl.value = state.batchFiles[0];
+        probeAndShowInfo(state.batchFiles[0]);
+    }
+}
+
+function renderBatchFileList() {
+    const container = document.getElementById('batch-file-list');
+    if (!container) return;
+
+    if (state.batchFiles.length <= 1) {
+        container.classList.add('hidden');
+        container.innerHTML = '';
+        return;
+    }
+
+    container.classList.remove('hidden');
+    const maxVisible = 20;
+    const visible = state.batchFiles.slice(0, maxVisible);
+    const remaining = state.batchFiles.length - maxVisible;
+
+    container.innerHTML = `
+        <div class="flex justify-between items-center mb-1">
+            <span class="text-sm text-gray-400">${state.batchFiles.length} files selected (batch mode)</span>
+            <button onclick="window.clearBatchFiles()" class="text-xs text-gray-500 hover:text-gray-300">Clear All</button>
+        </div>
+        ${visible.map((f, i) => `
+            <div class="flex justify-between items-center text-sm bg-gray-800/50 rounded px-2 py-1">
+                <span class="truncate flex-1 text-gray-300" title="${escapeHtml(f)}">${escapeHtml(f.split(/[\\/]/).pop())}</span>
+                <button onclick="window.removeBatchFile(${i})" class="text-gray-500 hover:text-red-400 ml-2 text-xs">✕</button>
+            </div>
+        `).join('')}
+        ${remaining > 0 ? `<div class="text-xs text-gray-500 text-center">and ${remaining} more...</div>` : ''}
+    `;
+}
+
+window.clearBatchFiles = function() {
+    state.batchFiles = [];
+    renderBatchFileList();
+};
+
+window.removeBatchFile = function(idx) {
+    state.batchFiles.splice(idx, 1);
+    renderBatchFileList();
+    if (state.batchFiles.length === 0) {
+        document.getElementById('convert-input').value = '';
+    }
+};
+
+function syncBatchUI(queue) {
+    if (!queue) return;
+
+    const startBtn = document.getElementById('convert-start-btn');
+    const progressDiv = document.getElementById('convert-progress');
+    const batchDiv = document.getElementById('batch-progress');
+
+    if (startBtn) startBtn.classList.add('hidden');
+    if (progressDiv) progressDiv.classList.add('hidden');
+
+    if (!batchDiv) {
+        // Create batch progress UI
+        const container = document.getElementById('convert-action');
+        if (!container) return;
+        container.insertAdjacentHTML('beforeend', `
+            <div id="batch-progress" class="space-y-3">
+                <div class="flex justify-between text-sm">
+                    <span id="batch-overall-label">Overall: 0/${queue.total_files} files</span>
+                    <span id="batch-overall-pct">0%</span>
+                </div>
+                <div class="progress-bar">
+                    <div id="batch-overall-bar" class="progress-bar-fill" style="width: 0%"></div>
+                </div>
+                <div id="batch-current-file" class="text-sm text-gray-400 truncate"></div>
+                <div class="progress-bar">
+                    <div id="batch-current-bar" class="progress-bar-fill bg-blue-400" style="width: 0%"></div>
+                </div>
+                <div class="flex justify-between text-sm text-gray-500">
+                    <span id="batch-current-status"></span>
+                </div>
+                <button onclick="window.cancelBatchConversion()" class="btn-danger text-sm w-full">Cancel All</button>
+            </div>
+        `);
+    }
+
+    // Update progress values
+    const overallLabel = document.getElementById('batch-overall-label');
+    const overallPct = document.getElementById('batch-overall-pct');
+    const overallBar = document.getElementById('batch-overall-bar');
+    const currentFile = document.getElementById('batch-current-file');
+    const currentBar = document.getElementById('batch-current-bar');
+    const currentStatus = document.getElementById('batch-current-status');
+
+    if (overallLabel) overallLabel.textContent = `Overall: ${queue.completed + queue.failed}/${queue.total_files} files`;
+    if (overallPct) overallPct.textContent = `${queue.progress.toFixed(1)}%`;
+    if (overallBar) overallBar.style.width = `${queue.progress.toFixed(1)}%`;
+
+    const currentJob = queue.jobs[queue.current_idx];
+    if (currentJob && currentFile) {
+        currentFile.textContent = `Converting: ${currentJob.input_file.split(/[\\/]/).pop()}`;
+    }
+    if (currentJob && currentBar) {
+        currentBar.style.width = `${currentJob.progress.toFixed(1)}%`;
+    }
+    if (currentJob && currentStatus) {
+        currentStatus.textContent = currentJob.status === 'running' ? `${currentJob.progress.toFixed(1)}%` : currentJob.status;
+    }
+}
+
+function showBatchResult(queue) {
+    const batchDiv = document.getElementById('batch-progress');
+    if (batchDiv) batchDiv.remove();
+
+    const startBtn = document.getElementById('convert-start-btn');
+    if (startBtn) startBtn.classList.add('hidden');
+
+    const prev = document.getElementById('convert-result');
+    if (prev) prev.remove();
+
+    const container = document.getElementById('convert-action');
+    if (!container) return;
+
+    const allOk = queue.failed === 0;
+    const failedJobs = (queue.jobs || []).filter(j => j.status === 'failed');
+    const failedListHtml = failedJobs.length > 0
+        ? `<div class="text-sm space-y-1 mt-1">
+            ${failedJobs.map(j => {
+                const name = j.input_file.split(/[\\/]/).pop();
+                return `<div class="text-red-400">✕ ${name}${j.error ? ` — ${j.error}` : ''}</div>`;
+            }).join('')}
+           </div>`
+        : '';
+    container.insertAdjacentHTML('beforeend', `
+        <div id="convert-result" class="space-y-3">
+            <div class="flex items-center gap-2 ${allOk ? 'text-green-400' : 'text-yellow-400'} font-medium">
+                <span>${allOk ? '✓' : '⚠'}</span>
+                Batch complete: ${queue.completed} succeeded${queue.failed > 0 ? `, ${queue.failed} failed` : ''}
+            </div>
+            ${failedListHtml}
+            <div class="flex gap-2">
+                <button onclick="window.resetConvertUI(); window.clearBatchFiles();" class="btn-primary flex-1">
+                    Convert More
+                </button>
+            </div>
+        </div>
+    `);
+}
+
+window.cancelBatchConversion = async function() {
+    try {
+        await App.CancelBatchConversion();
+        addLog('Batch conversion cancelled');
+        const batchDiv = document.getElementById('batch-progress');
+        if (batchDiv) batchDiv.remove();
+        resetConvertUI();
+    } catch (err) {
+        addLog(`Cancel batch error: ${err}`);
+    }
+};
 
 window.startConversion = async function() {
     const inputFile = document.getElementById('convert-input')?.value;
-    if (!inputFile) {
+    const isBatch = state.batchFiles.length > 1;
+
+    if (!inputFile && !isBatch) {
         alert('Please select an input file');
         return;
     }
 
-    // Trim validation
-    const startTime = document.getElementById('trim-start')?.value || '';
-    const endTime = document.getElementById('trim-end')?.value || '';
+    // Trim validation — not applicable in batch mode (each file has a different duration)
+    const startTime = isBatch ? '' : (document.getElementById('trim-start')?.value || '');
+    const endTime   = isBatch ? '' : (document.getElementById('trim-end')?.value || '');
     const trimError = document.getElementById('trim-error');
 
     if (startTime || endTime) {
@@ -1194,14 +1408,21 @@ window.startConversion = async function() {
     };
 
     try {
-        await App.StartConversion(opts);
-        addLog(`Converting: ${inputFile}`);
-
-        // Show progress, hide start button
-        const startBtn = document.getElementById('convert-start-btn');
-        if (startBtn) startBtn.classList.add('hidden');
-        const progressDiv = document.getElementById('convert-progress');
-        if (progressDiv) progressDiv.classList.remove('hidden');
+        if (state.batchFiles.length > 1) {
+            // Batch mode
+            await App.StartBatchConversion(state.batchFiles, opts);
+            addLog(`Batch converting ${state.batchFiles.length} files`);
+            const startBtn = document.getElementById('convert-start-btn');
+            if (startBtn) startBtn.classList.add('hidden');
+        } else {
+            // Single file mode
+            await App.StartConversion(opts);
+            addLog(`Converting: ${inputFile}`);
+            const startBtn = document.getElementById('convert-start-btn');
+            if (startBtn) startBtn.classList.add('hidden');
+            const progressDiv = document.getElementById('convert-progress');
+            if (progressDiv) progressDiv.classList.remove('hidden');
+        }
     } catch (err) {
         alert('Failed to start conversion: ' + err);
         addLog(`Conversion error: ${err}`);
@@ -2392,12 +2613,31 @@ function setupEventListeners() {
     // File drag-and-drop for the convert tab
     OnFileDrop((x, y, paths) => {
         if (state.currentTab !== 'convert' || !paths || paths.length === 0) return;
-        const inputEl = document.getElementById('convert-input');
-        if (inputEl) {
-            inputEl.value = paths[0];
-            probeAndShowInfo(paths[0]);
+
+        if (paths.length > 1) {
+            addBatchFiles(paths);
+        } else {
+            const inputEl = document.getElementById('convert-input');
+            if (inputEl) {
+                inputEl.value = paths[0];
+                probeAndShowInfo(paths[0]);
+            }
         }
     }, true);
+
+    // Batch conversion progress
+    EventsOn('convert:batch:progress', (queue) => {
+        state.batchQueue = queue;
+        if (queue.status === 'completed' || queue.status === 'cancelled') {
+            state.batchQueue = null;
+            if (queue.status === 'completed') {
+                addLog(`Batch complete: ${queue.completed} succeeded, ${queue.failed} failed`);
+                showBatchResult(queue);
+            }
+        } else {
+            syncBatchUI(queue);
+        }
+    });
 
     EventsOn('jsruntime:progress', (message) => {
         addVerboseLog(`jsruntime: ${message}`);

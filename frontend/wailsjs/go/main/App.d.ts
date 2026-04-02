@@ -14,7 +14,11 @@ export function BrowseFolder():Promise<string>;
 
 export function BrowseInputFile():Promise<string>;
 
+export function BrowseMultipleInputFiles():Promise<Array<string>>;
+
 export function BrowseOutputFile(arg1:string):Promise<string>;
+
+export function CancelBatchConversion():Promise<void>;
 
 export function CancelConversion():Promise<void>;
 
@@ -83,6 +87,8 @@ export function ResumeAllDownloads():Promise<number>;
 export function ResumeDownload(arg1:string):Promise<void>;
 
 export function SaveSettings(arg1:config.Settings):Promise<void>;
+
+export function StartBatchConversion(arg1:Array<string>,arg2:converter.ConversionOptions):Promise<void>;
 
 export function StartConversion(arg1:converter.ConversionOptions):Promise<converter.ConversionJob>;
 

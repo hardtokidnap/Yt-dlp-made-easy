@@ -277,11 +277,11 @@ export namespace converter {
 	    resolution?: string;
 	    extra_args?: string;
 	    is_platform: boolean;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new Preset(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];

@@ -181,9 +181,18 @@ func BuildArgs(opts ConversionOptions) []string {
 
 	args = append(args, "-i", opts.InputFile)
 
-	// Post-input: -to for end time (interpreted relative to -ss when -ss is before -i)
+	// Post-input: use -t (duration) instead of -to (absolute position) because
+	// -to behaves inconsistently with input-side -ss across FFmpeg versions.
 	if opts.EndTime != "" {
-		args = append(args, "-to", opts.EndTime)
+		endSec := ParseTimeToSeconds(opts.EndTime)
+		startSec := 0.0
+		if opts.StartTime != "" {
+			startSec = ParseTimeToSeconds(opts.StartTime)
+		}
+		duration := endSec - startSec
+		if duration > 0 {
+			args = append(args, "-t", strconv.FormatFloat(duration, 'f', 3, 64))
+		}
 	}
 
 	isAudioOnly := audioOnlyFormats[opts.OutputFormat]
@@ -192,25 +201,22 @@ func BuildArgs(opts ConversionOptions) []string {
 		args = append(args, "-vn")
 	}
 
-	// Video codec
 	if !isAudioOnly && opts.VideoCodec != "" {
 		args = append(args, "-c:v", opts.VideoCodec)
 	}
 
-	// Audio codec
 	if opts.AudioCodec != "" {
 		args = append(args, "-c:a", opts.AudioCodec)
 	}
 
-	// Encoder preset (ultrafast, fast, medium, slow, etc.)
 	if opts.Preset != "" && !isAudioOnly {
 		args = append(args, "-preset", opts.Preset)
 	}
 
-	// Quality: CRF takes priority over video bitrate (they are mutually exclusive in ffmpeg)
+	// CRF and video bitrate are mutually exclusive in ffmpeg — CRF takes priority
 	if opts.CRF > 0 && !isAudioOnly {
 		args = append(args, "-crf", strconv.Itoa(opts.CRF))
-		// VP9 requires -b:v 0 for constant quality mode
+		// VP9 requires -b:v 0 alongside CRF for constant quality mode
 		if opts.VideoCodec == "libvpx-vp9" {
 			args = append(args, "-b:v", "0")
 		}
@@ -218,30 +224,29 @@ func BuildArgs(opts ConversionOptions) []string {
 		args = append(args, "-b:v", opts.VideoBitrate)
 	}
 
-	// Audio bitrate
 	if opts.AudioBitrate != "" {
 		args = append(args, "-b:a", opts.AudioBitrate)
 	}
 
-	// Resolution scaling
 	if opts.Resolution != "" && !isAudioOnly {
 		args = append(args, "-vf", "scale="+opts.Resolution)
 	}
 
-	// Custom args — split on spaces but respect quoted values
 	if opts.CustomArgs != "" {
 		args = append(args, splitArgs(opts.CustomArgs)...)
 	}
 
-	// Output file — derive from input if not specified
 	output := opts.OutputFile
+	ext := opts.OutputFormat
+	if ext == "" {
+		ext = "mp4"
+	}
 	if output == "" {
-		ext := opts.OutputFormat
-		if ext == "" {
-			ext = "mp4"
-		}
 		base := strings.TrimSuffix(filepath.Base(opts.InputFile), filepath.Ext(opts.InputFile))
 		output = filepath.Join(filepath.Dir(opts.InputFile), base+"_converted."+ext)
+	} else if filepath.Ext(output) == "" {
+		// User provided a path with no extension — append the output format
+		output = output + "." + ext
 	}
 	args = append(args, output)
 

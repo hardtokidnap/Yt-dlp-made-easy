@@ -15,10 +15,11 @@ type MediaInfo struct {
 	Height      int     `json:"height"`
 	VideoCodec  string  `json:"video_codec"`
 	AudioCodec  string  `json:"audio_codec"`
-	Bitrate     string  `json:"bitrate"`
-	FileSize    string  `json:"file_size"`
-	HasVideo    bool    `json:"has_video"`
-	HasAudio    bool    `json:"has_audio"`
+	Bitrate      string  `json:"bitrate"`
+	AudioBitrate string  `json:"audio_bitrate"`
+	FileSize     string  `json:"file_size"`
+	HasVideo     bool    `json:"has_video"`
+	HasAudio     bool    `json:"has_audio"`
 }
 
 // ffprobeOutput mirrors the JSON structure from ffprobe -show_format -show_streams.
@@ -38,6 +39,7 @@ type ffprobeStream struct {
 	CodecName string `json:"codec_name"`
 	Width     int    `json:"width"`
 	Height    int    `json:"height"`
+	BitRate   string `json:"bit_rate"`
 }
 
 // ProbeFile runs ffprobe on the given file and returns parsed media information.
@@ -62,26 +64,23 @@ func ProbeFile(filePath string) (*MediaInfo, error) {
 
 	info := &MediaInfo{}
 
-	// Parse duration
 	if probe.Format.Duration != "" {
 		secs, _ := strconv.ParseFloat(probe.Format.Duration, 64)
 		info.DurationSec = secs
 		info.Duration = formatDuration(secs)
 	}
 
-	// Parse file size
 	if probe.Format.Size != "" {
 		bytes, _ := strconv.ParseInt(probe.Format.Size, 10, 64)
 		info.FileSize = formatFileSize(bytes)
 	}
 
-	// Parse bitrate
 	if probe.Format.BitRate != "" {
 		bps, _ := strconv.ParseInt(probe.Format.BitRate, 10, 64)
 		info.Bitrate = formatBitrate(bps)
 	}
 
-	// Find video and audio streams
+	// Use only the first video/audio stream — files can have multiple (e.g. embedded album art)
 	for _, s := range probe.Streams {
 		switch s.CodecType {
 		case "video":
@@ -95,6 +94,10 @@ func ProbeFile(filePath string) (*MediaInfo, error) {
 			if !info.HasAudio {
 				info.HasAudio = true
 				info.AudioCodec = strings.ToUpper(s.CodecName)
+				if s.BitRate != "" {
+					bps, _ := strconv.ParseInt(s.BitRate, 10, 64)
+					info.AudioBitrate = formatBitrate(bps)
+				}
 			}
 		}
 	}
