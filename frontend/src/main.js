@@ -1032,7 +1032,9 @@ async function probeAndShowInfo(filePath) {
 
         const abSelect = document.getElementById('convert-abitrate');
         if (abSelect && info.audio_bitrate) {
-            const srcKbps = parseInt(info.audio_bitrate, 10);
+            const mbps = info.audio_bitrate.match(/^([\d.]+)\s*Mbps/i);
+            const kbps = info.audio_bitrate.match(/^([\d.]+)\s*kbps/i);
+            const srcKbps = mbps ? Math.round(parseFloat(mbps[1]) * 1000) : kbps ? Math.round(parseFloat(kbps[1])) : 0;
             if (srcKbps > 0) {
                 const opts = [320, 256, 192, 128, 96];
                 const closest = opts.reduce((a, b) => Math.abs(b - srcKbps) < Math.abs(a - srcKbps) ? b : a);
@@ -1072,7 +1074,7 @@ window.onCrfSliderChange = function(val) {
     const vbitrateField = document.getElementById('convert-vbitrate');
     const slider = document.getElementById('convert-crf');
     const resetBtn = document.getElementById('crf-reset-btn');
-    const crf = 32 - parseInt(val, 10);
+    const crf = 32 - parseInt(val, 10); // Inverted so dragging right = better quality
 
     if (label) label.textContent = `CRF: ${crf}`;
     if (slider) { slider.dataset.active = 'true'; slider.classList.remove('opacity-40'); }
@@ -1326,8 +1328,8 @@ function showBatchResult(queue) {
     const failedListHtml = failedJobs.length > 0
         ? `<div class="text-sm space-y-1 mt-1">
             ${failedJobs.map(j => {
-                const name = j.input_file.split(/[\\/]/).pop();
-                return `<div class="text-red-400">✕ ${name}${j.error ? ` — ${j.error}` : ''}</div>`;
+                const name = escapeHtml(j.input_file.split(/[\\/]/).pop());
+                return `<div class="text-red-400">✕ ${name}${j.error ? ` — ${escapeHtml(j.error)}` : ''}</div>`;
             }).join('')}
            </div>`
         : '';
@@ -2625,7 +2627,13 @@ function setupEventListeners() {
         if (state.currentTab !== 'convert' || !paths || paths.length === 0) return;
 
         if (paths.length > 1) {
-            addBatchFiles(paths);
+            const valid = paths.filter(p => {
+                const ext = p.split('.').pop().toLowerCase();
+                return p.includes('.') && SUPPORTED_MEDIA_EXTENSIONS.has(ext);
+            });
+            const rejected = paths.length - valid.length;
+            if (rejected > 0) addLog(`Skipped ${rejected} unsupported file(s)`);
+            if (valid.length > 0) addBatchFiles(valid);
         } else {
             const inputEl = document.getElementById('convert-input');
             if (inputEl) {
