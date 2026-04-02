@@ -1,5 +1,5 @@
 import './style.css';
-import {EventsOn} from '../wailsjs/runtime/runtime';
+import {EventsOn, OnFileDrop} from '../wailsjs/runtime/runtime';
 import * as App from '../wailsjs/go/main/App';
 
 // State management
@@ -11,7 +11,9 @@ const state = {
     settings: null,
     logs: [],
     conversion: null,
-    ffmpegInstalled: false
+    ffmpegInstalled: false,
+    batchFiles: [],
+    batchQueue: null
 };
 
 // Tab definitions
@@ -678,12 +680,11 @@ function getStatusText(item) {
 async function renderConvertTab() {
     const content = document.getElementById('tab-content');
 
-    let ffmpegInstalled = false;
     try {
-        ffmpegInstalled = await App.IsFFmpegInstalled();
+        state.ffmpegInstalled = await App.IsFFmpegInstalled();
     } catch (_) { /* ignore */ }
 
-    if (!ffmpegInstalled) {
+    if (!state.ffmpegInstalled) {
         content.innerHTML = `
             <div class="max-w-4xl mx-auto space-y-6">
                 <div class="card">
@@ -719,13 +720,15 @@ async function renderConvertTab() {
     content.innerHTML = `
         <div class="max-w-4xl mx-auto space-y-6">
             <!-- Input File -->
-            <div class="card">
+            <div class="card drop-zone" id="convert-drop-zone" style="--wails-drop-target: drop">
                 <h3 class="text-lg font-semibold mb-4">Input</h3>
                 <div class="space-y-3">
                     <div class="flex space-x-2">
-                        <input type="text" id="convert-input" class="input-field flex-1" placeholder="Select a media file..." readonly>
+                        <input type="text" id="convert-input" class="input-field flex-1" placeholder="Select or drop a media file..." readonly>
                         <button onclick="window.browseInputFile()" class="btn-secondary">Browse</button>
+                        <button onclick="window.browseMultipleFiles()" class="btn-secondary" title="Select multiple files for batch conversion">Add Files</button>
                     </div>
+                    <div id="batch-file-list" class="hidden mt-2 max-h-40 overflow-y-auto space-y-1"></div>
                     ${recentOptions ? `
                         <div>
                             <label class="block text-sm text-gray-400 mb-1">Or pick a recent download:</label>
@@ -735,14 +738,51 @@ async function renderConvertTab() {
                             </select>
                         </div>
                     ` : ''}
+                    <div id="media-info-panel" class="hidden mt-3 p-3 bg-gray-800/50 rounded border border-gray-700">
+                        <div id="media-info-grid" class="grid grid-cols-3 gap-x-4 gap-y-2 text-sm">
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <!-- Presets -->
+            <!-- Trim / Cut -->
+            <div id="trim-section" class="card hidden">
+                <h3 class="text-lg font-semibold mb-4">Trim / Cut</h3>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Start Time</label>
+                        <input type="text" id="trim-start" class="input-field" placeholder="00:00:00">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">End Time</label>
+                        <input type="text" id="trim-end" class="input-field" placeholder="End of file">
+                    </div>
+                </div>
+                <p class="text-xs text-gray-500 mt-2">Leave empty to use full duration. Format: HH:MM:SS or MM:SS</p>
+                <p id="trim-error" class="text-xs text-red-400 mt-1 hidden"></p>
+            </div>
+
+            <!-- Platform Presets -->
+            ${presets.some(p => p.is_platform) ? `
             <div class="card">
-                <h3 class="text-lg font-semibold mb-4">Quick Presets</h3>
+                <h3 class="text-lg font-semibold mb-4">Optimize for Platform</h3>
                 <div class="flex flex-wrap gap-2">
-                    ${presets.map(p => `
+                    ${presets.filter(p => p.is_platform).map(p => `
+                        <button onclick="window.applyConvertPreset('${p.id}')"
+                                class="bg-blue-700 hover:bg-blue-600 text-sm px-3 py-2 rounded transition-colors font-medium"
+                                title="${escapeHtml(p.description)}">
+                            ${escapeHtml(p.name)}
+                        </button>
+                    `).join('')}
+                </div>
+            </div>
+            ` : ''}
+
+            <!-- Format Presets -->
+            <div class="card">
+                <h3 class="text-lg font-semibold mb-4">Format Presets</h3>
+                <div class="flex flex-wrap gap-2">
+                    ${presets.filter(p => !p.is_platform).map(p => `
                         <button onclick="window.applyConvertPreset('${p.id}')"
                                 class="bg-gray-700 hover:bg-gray-600 text-sm px-3 py-2 rounded transition-colors"
                                 title="${escapeHtml(p.description)}">
@@ -824,10 +864,10 @@ async function renderConvertTab() {
                         <div>
                             <label class="block text-sm font-medium mb-2">Audio Bitrate</label>
                             <select id="convert-abitrate" class="select-field w-full">
-                                <option value="">Default</option>
+                                <option value="">Source</option>
                                 <option value="320k">320k</option>
                                 <option value="256k">256k</option>
-                                <option value="192k" selected>192k</option>
+                                <option value="192k">192k</option>
                                 <option value="128k">128k</option>
                                 <option value="96k">96k</option>
                             </select>
@@ -842,6 +882,20 @@ async function renderConvertTab() {
                                 <option value="-1:720">720p</option>
                                 <option value="-1:480">480p</option>
                             </select>
+                        </div>
+                    </div>
+
+                    <div id="quality-slider-section">
+                        <label class="block text-sm font-medium mb-2">Quality</label>
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs text-gray-400 whitespace-nowrap">Smallest File</span>
+                            <input type="range" id="convert-crf" min="1" max="14" value="9" step="1"
+                                   class="flex-1 accent-blue-500 opacity-40" oninput="window.onCrfSliderChange(this.value)">
+                            <span class="text-xs text-gray-400 whitespace-nowrap">Best Quality</span>
+                        </div>
+                        <div class="flex justify-between items-center mt-1">
+                            <span class="text-xs text-gray-500" id="crf-label">CRF: Off (using bitrate)</span>
+                            <button type="button" onclick="window.resetCrfSlider()" class="text-xs text-gray-500 hover:text-gray-300 hidden" id="crf-reset-btn">Reset (use bitrate)</button>
                         </div>
                     </div>
 
@@ -911,6 +965,143 @@ function syncConversionUI(job) {
     if (duration) duration.textContent = job.duration || '';
 }
 
+// --- Convert Tab Helpers ---
+
+const SUPPORTED_MEDIA_EXTENSIONS = new Set([
+    'mp4','mkv','webm','avi','mov','flv','wmv','ts','m2ts','m4v',
+    'mp3','m4a','aac','ogg','opus','flac','wav','wma','weba'
+]);
+
+let _probeId = 0;
+
+async function probeAndShowInfo(filePath) {
+    const panel = document.getElementById('media-info-panel');
+    const grid = document.getElementById('media-info-grid');
+    if (!panel || !grid) return;
+
+    const basename = filePath.split(/[\\/]/).pop();
+    const dotIdx = basename.lastIndexOf('.');
+    const hasExtension = dotIdx > 0;
+    const ext = hasExtension ? basename.slice(dotIdx + 1).toLowerCase() : '';
+    if (!hasExtension || !SUPPORTED_MEDIA_EXTENSIONS.has(ext)) {
+        panel.classList.add('hidden');
+        state._currentMediaInfo = null;
+        const trimSection = document.getElementById('trim-section');
+        if (trimSection) trimSection.classList.add('hidden');
+        alert(hasExtension
+            ? `"${ext.toUpperCase()}" files are not supported. Please select a video or audio file.`
+            : 'Please select a file with a supported video or audio extension.');
+        const inputEl = document.getElementById('convert-input');
+        if (inputEl) inputEl.value = '';
+        return;
+    }
+
+    const myProbeId = ++_probeId;
+
+    try {
+        const info = await App.ProbeFile(filePath);
+        if (myProbeId !== _probeId) return; // Newer probe started, discard stale results
+        state._currentMediaInfo = info;
+
+        const items = [];
+        items.push(`<span class="text-gray-400">Duration</span><span class="text-white col-span-2">${escapeHtml(info.duration || 'N/A')}</span>`);
+
+        if (info.has_video) {
+            items.push(`<span class="text-gray-400">Resolution</span><span class="text-white col-span-2">${info.width}×${info.height}</span>`);
+            items.push(`<span class="text-gray-400">Video</span><span class="text-white col-span-2">${escapeHtml(info.video_codec || 'N/A')}</span>`);
+        } else {
+            items.push(`<span class="text-gray-400">Type</span><span class="text-white col-span-2">Audio only</span>`);
+        }
+
+        if (info.has_audio) {
+            const audioParts = [escapeHtml(info.audio_codec || 'N/A')];
+            if (info.audio_bitrate) audioParts.push(escapeHtml(info.audio_bitrate));
+            items.push(`<span class="text-gray-400">Audio</span><span class="text-white col-span-2">${audioParts.join(' · ')}</span>`);
+        }
+
+        items.push(`<span class="text-gray-400">Bitrate</span><span class="text-white col-span-2">${escapeHtml(info.bitrate || 'N/A')}</span>`);
+        items.push(`<span class="text-gray-400">Size</span><span class="text-white col-span-2">${escapeHtml(info.file_size || 'N/A')}</span>`);
+
+        grid.innerHTML = items.join('');
+        panel.classList.remove('hidden');
+
+        const qualitySection = document.getElementById('quality-slider-section');
+        if (qualitySection) {
+            qualitySection.style.display = info.has_video ? '' : 'none';
+        }
+
+        // Default output options to source quality so conversions don't accidentally downscale
+        const resSelect = document.getElementById('convert-resolution');
+        if (resSelect && info.has_video && info.height > 0) {
+            const match = Array.from(resSelect.options).find(o => o.value === `-1:${info.height}`);
+            resSelect.value = match ? match.value : '';
+        }
+
+        const abSelect = document.getElementById('convert-abitrate');
+        if (abSelect && info.audio_bitrate) {
+            const mbps = info.audio_bitrate.match(/^([\d.]+)\s*Mbps/i);
+            const kbps = info.audio_bitrate.match(/^([\d.]+)\s*kbps/i);
+            const srcKbps = mbps ? Math.round(parseFloat(mbps[1]) * 1000) : kbps ? Math.round(parseFloat(kbps[1])) : 0;
+            if (srcKbps > 0) {
+                const opts = [320, 256, 192, 128, 96];
+                const closest = opts.reduce((a, b) => Math.abs(b - srcKbps) < Math.abs(a - srcKbps) ? b : a);
+                abSelect.value = `${closest}k`;
+            }
+        }
+
+        const trimSection = document.getElementById('trim-section');
+        if (trimSection) trimSection.classList.remove('hidden');
+        const trimError = document.getElementById('trim-error');
+        if (trimError) trimError.classList.add('hidden');
+        const trimEnd = document.getElementById('trim-end');
+        if (trimEnd && info.duration) trimEnd.placeholder = info.duration;
+    } catch (err) {
+        if (myProbeId !== _probeId) return;
+        panel.classList.add('hidden');
+        state._currentMediaInfo = null;
+        addVerboseLog(`Probe failed: ${err}`);
+    }
+}
+
+// Parses HH:MM:SS, MM:SS, or SS to seconds. Returns null on invalid format.
+function parseTimeInput(str) {
+    if (!str || !str.trim()) return null;
+    const parts = str.trim().split(':');
+    if (parts.length > 3 || parts.some(p => isNaN(parseFloat(p)) || parseFloat(p) < 0)) return null;
+
+    switch (parts.length) {
+        case 3: return parseFloat(parts[0]) * 3600 + parseFloat(parts[1]) * 60 + parseFloat(parts[2]);
+        case 2: return parseFloat(parts[0]) * 60 + parseFloat(parts[1]);
+        case 1: return parseFloat(parts[0]);
+        default: return null;
+    }
+}
+
+window.onCrfSliderChange = function(val) {
+    const label = document.getElementById('crf-label');
+    const vbitrateField = document.getElementById('convert-vbitrate');
+    const slider = document.getElementById('convert-crf');
+    const resetBtn = document.getElementById('crf-reset-btn');
+    const crf = 32 - parseInt(val, 10); // Inverted so dragging right = better quality
+
+    if (label) label.textContent = `CRF: ${crf}`;
+    if (slider) { slider.dataset.active = 'true'; slider.classList.remove('opacity-40'); }
+    if (resetBtn) resetBtn.classList.remove('hidden');
+    if (vbitrateField) { vbitrateField.disabled = true; vbitrateField.value = ''; }
+};
+
+window.resetCrfSlider = function() {
+    const slider = document.getElementById('convert-crf');
+    const label = document.getElementById('crf-label');
+    const vbitrateField = document.getElementById('convert-vbitrate');
+    const resetBtn = document.getElementById('crf-reset-btn');
+
+    if (slider) { slider.value = '9'; slider.dataset.active = ''; slider.classList.add('opacity-40'); }
+    if (label) label.textContent = 'CRF: Off (using bitrate)';
+    if (resetBtn) resetBtn.classList.add('hidden');
+    if (vbitrateField) vbitrateField.disabled = false;
+};
+
 // --- Convert Tab Handlers ---
 
 window.downloadFFmpeg = async function() {
@@ -935,12 +1126,14 @@ window.browseInputFile = async function() {
     const path = await App.BrowseInputFile();
     if (path) {
         document.getElementById('convert-input').value = path;
+        probeAndShowInfo(path);
     }
 };
 
 window.selectRecentDownload = function(path) {
     if (path) {
         document.getElementById('convert-input').value = path;
+        probeAndShowInfo(path);
     }
 };
 
@@ -973,16 +1166,266 @@ window.applyConvertPreset = function(presetId) {
     setField('convert-acodec', 'audio_codec');
     setField('convert-preset', 'preset');
     setField('convert-abitrate', 'audio_bitrate');
+    setField('convert-resolution', 'resolution');
+
+    // Set CRF slider if preset has a CRF value
+    if (preset.crf > 0) {
+        const slider = document.getElementById('convert-crf');
+        const sliderVal = 32 - preset.crf;
+        if (slider) {
+            slider.value = String(sliderVal);
+            window.onCrfSliderChange(sliderVal);
+        }
+    } else {
+        window.resetCrfSlider();
+    }
+
+    // Populate custom args with platform-specific flags so user can see and modify
+    const customArgsEl = document.getElementById('convert-custom-args');
+    if (customArgsEl) customArgsEl.value = preset.extra_args || '';
 
     addVerboseLog(`Applied preset: ${preset.name}`);
+};
+// --- Batch Conversion Handlers ---
+
+window.browseMultipleFiles = async function() {
+    try {
+        const paths = await App.BrowseMultipleInputFiles();
+        if (paths && paths.length > 0) {
+            addBatchFiles(paths);
+        }
+    } catch (err) {
+        addLog(`Browse files error: ${err}`);
+    }
+};
+
+function addBatchFiles(paths) {
+    const unique = paths.filter(p => !state.batchFiles.includes(p));
+    state.batchFiles.push(...unique);
+    renderBatchFileList();
+
+    // If only one file total, also set it as the main input
+    if (state.batchFiles.length === 1) {
+        const inputEl = document.getElementById('convert-input');
+        if (inputEl) inputEl.value = state.batchFiles[0];
+        probeAndShowInfo(state.batchFiles[0]);
+    }
+}
+
+function renderBatchFileList() {
+    const container = document.getElementById('batch-file-list');
+    if (!container) return;
+
+    if (state.batchFiles.length <= 1) {
+        container.classList.add('hidden');
+        container.innerHTML = '';
+        return;
+    }
+
+    container.classList.remove('hidden');
+    const maxVisible = 20;
+    const visible = state.batchFiles.slice(0, maxVisible);
+    const remaining = state.batchFiles.length - maxVisible;
+
+    container.innerHTML = `
+        <div class="flex justify-between items-center mb-1">
+            <span class="text-sm text-gray-400">${state.batchFiles.length} files selected (batch mode)</span>
+            <button onclick="window.clearBatchFiles()" class="text-xs text-gray-500 hover:text-gray-300">Clear All</button>
+        </div>
+        ${visible.map((f, i) => `
+            <div class="flex justify-between items-center text-sm bg-gray-800/50 rounded px-2 py-1">
+                <span class="truncate flex-1 text-gray-300" title="${escapeHtml(f)}">${escapeHtml(f.split(/[\\/]/).pop())}</span>
+                <button onclick="window.removeBatchFile(${i})" class="text-gray-500 hover:text-red-400 ml-2 text-xs">✕</button>
+            </div>
+        `).join('')}
+        ${remaining > 0 ? `<div class="text-xs text-gray-500 text-center">and ${remaining} more...</div>` : ''}
+    `;
+}
+
+function clearMediaInfoAndTrim() {
+    state._currentMediaInfo = null;
+    const panel = document.getElementById('media-info-panel');
+    if (panel) panel.classList.add('hidden');
+    const trimSection = document.getElementById('trim-section');
+    if (trimSection) trimSection.classList.add('hidden');
+    const trimStart = document.getElementById('trim-start');
+    if (trimStart) trimStart.value = '';
+    const trimEnd = document.getElementById('trim-end');
+    if (trimEnd) { trimEnd.value = ''; trimEnd.placeholder = ''; }
+}
+
+window.clearBatchFiles = function() {
+    state.batchFiles = [];
+    renderBatchFileList();
+    clearMediaInfoAndTrim();
+    const inputEl = document.getElementById('convert-input');
+    if (inputEl) inputEl.value = '';
+};
+
+window.removeBatchFile = function(idx) {
+    state.batchFiles.splice(idx, 1);
+    renderBatchFileList();
+    if (state.batchFiles.length === 0) {
+        document.getElementById('convert-input').value = '';
+        clearMediaInfoAndTrim();
+    } else if (state.batchFiles.length === 1) {
+        const inputEl = document.getElementById('convert-input');
+        if (inputEl) inputEl.value = state.batchFiles[0];
+        probeAndShowInfo(state.batchFiles[0]);
+    }
+};
+
+function syncBatchUI(queue) {
+    if (!queue) return;
+
+    const startBtn = document.getElementById('convert-start-btn');
+    const progressDiv = document.getElementById('convert-progress');
+    const batchDiv = document.getElementById('batch-progress');
+
+    if (startBtn) startBtn.classList.add('hidden');
+    if (progressDiv) progressDiv.classList.add('hidden');
+
+    if (!batchDiv) {
+        // Create batch progress UI
+        const container = document.getElementById('convert-action');
+        if (!container) return;
+        container.insertAdjacentHTML('beforeend', `
+            <div id="batch-progress" class="space-y-3">
+                <div class="flex justify-between text-sm">
+                    <span id="batch-overall-label">Overall: 0/${queue.total_files} files</span>
+                    <span id="batch-overall-pct">0%</span>
+                </div>
+                <div class="progress-bar">
+                    <div id="batch-overall-bar" class="progress-bar-fill" style="width: 0%"></div>
+                </div>
+                <div id="batch-current-file" class="text-sm text-gray-400 truncate"></div>
+                <div class="progress-bar">
+                    <div id="batch-current-bar" class="progress-bar-fill bg-blue-400" style="width: 0%"></div>
+                </div>
+                <div class="flex justify-between text-sm text-gray-500">
+                    <span id="batch-current-status"></span>
+                </div>
+                <button onclick="window.cancelBatchConversion()" class="btn-danger text-sm w-full">Cancel All</button>
+            </div>
+        `);
+    }
+
+    // Update progress values
+    const overallLabel = document.getElementById('batch-overall-label');
+    const overallPct = document.getElementById('batch-overall-pct');
+    const overallBar = document.getElementById('batch-overall-bar');
+    const currentFile = document.getElementById('batch-current-file');
+    const currentBar = document.getElementById('batch-current-bar');
+    const currentStatus = document.getElementById('batch-current-status');
+
+    if (overallLabel) overallLabel.textContent = `Overall: ${queue.completed + queue.failed}/${queue.total_files} files`;
+    if (overallPct) overallPct.textContent = `${queue.progress.toFixed(1)}%`;
+    if (overallBar) overallBar.style.width = `${queue.progress.toFixed(1)}%`;
+
+    const currentJob = queue.jobs[queue.current_idx];
+    if (currentJob && currentFile) {
+        currentFile.textContent = `Converting: ${currentJob.input_file.split(/[\\/]/).pop()}`;
+    }
+    if (currentJob && currentBar) {
+        currentBar.style.width = `${currentJob.progress.toFixed(1)}%`;
+    }
+    if (currentJob && currentStatus) {
+        currentStatus.textContent = currentJob.status === 'running' ? `${currentJob.progress.toFixed(1)}%` : currentJob.status;
+    }
+}
+
+function showBatchResult(queue) {
+    const batchDiv = document.getElementById('batch-progress');
+    if (batchDiv) batchDiv.remove();
+
+    const startBtn = document.getElementById('convert-start-btn');
+    if (startBtn) startBtn.classList.add('hidden');
+
+    const prev = document.getElementById('convert-result');
+    if (prev) prev.remove();
+
+    const container = document.getElementById('convert-action');
+    if (!container) return;
+
+    const allOk = queue.failed === 0;
+    const failedJobs = (queue.jobs || []).filter(j => j.status === 'failed');
+    const failedListHtml = failedJobs.length > 0
+        ? `<div class="text-sm space-y-1 mt-1">
+            ${failedJobs.map(j => {
+                const name = escapeHtml(j.input_file.split(/[\\/]/).pop());
+                return `<div class="text-red-400">✕ ${name}${j.error ? ` — ${escapeHtml(j.error)}` : ''}</div>`;
+            }).join('')}
+           </div>`
+        : '';
+    container.insertAdjacentHTML('beforeend', `
+        <div id="convert-result" class="space-y-3">
+            <div class="flex items-center gap-2 ${allOk ? 'text-green-400' : 'text-yellow-400'} font-medium">
+                <span>${allOk ? '✓' : '⚠'}</span>
+                Batch complete: ${queue.completed} succeeded${queue.failed > 0 ? `, ${queue.failed} failed` : ''}
+            </div>
+            ${failedListHtml}
+            <div class="flex gap-2">
+                <button onclick="window.resetConvertUI(); window.clearBatchFiles();" class="btn-primary flex-1">
+                    Convert More
+                </button>
+            </div>
+        </div>
+    `);
+}
+
+window.cancelBatchConversion = async function() {
+    try {
+        await App.CancelBatchConversion();
+        addLog('Batch conversion cancelled');
+        const batchDiv = document.getElementById('batch-progress');
+        if (batchDiv) batchDiv.remove();
+        resetConvertUI();
+    } catch (err) {
+        addLog(`Cancel batch error: ${err}`);
+    }
 };
 
 window.startConversion = async function() {
     const inputFile = document.getElementById('convert-input')?.value;
-    if (!inputFile) {
+    const isBatch = state.batchFiles.length > 1;
+
+    if (!inputFile && !isBatch) {
         alert('Please select an input file');
         return;
     }
+
+    // Trim validation — not applicable in batch mode (each file has a different duration)
+    const startTime = isBatch ? '' : (document.getElementById('trim-start')?.value || '');
+    const endTime   = isBatch ? '' : (document.getElementById('trim-end')?.value || '');
+    const trimError = document.getElementById('trim-error');
+
+    if (startTime || endTime) {
+        const startSec = startTime ? parseTimeInput(startTime) : 0;
+        const endSec = endTime ? parseTimeInput(endTime) : Infinity;
+        const mediaDuration = state._currentMediaInfo?.duration_sec || Infinity;
+
+        if (startTime && startSec === null) {
+            if (trimError) { trimError.textContent = 'Invalid start time format'; trimError.classList.remove('hidden'); }
+            return;
+        }
+        if (endTime && endSec === null) {
+            if (trimError) { trimError.textContent = 'Invalid end time format'; trimError.classList.remove('hidden'); }
+            return;
+        }
+        if (endSec !== Infinity && startSec >= endSec) {
+            if (trimError) { trimError.textContent = 'Start time must be before end time'; trimError.classList.remove('hidden'); }
+            return;
+        }
+        if (endSec !== Infinity && mediaDuration !== Infinity && endSec > mediaDuration + 1) {
+            if (trimError) { trimError.textContent = 'End time exceeds file duration'; trimError.classList.remove('hidden'); }
+            return;
+        }
+    }
+    if (trimError) trimError.classList.add('hidden');
+
+    const crfEl = document.getElementById('convert-crf');
+    const crfActive = crfEl?.dataset.active === 'true';
+    const crf = crfActive ? 32 - parseInt(crfEl.value, 10) : 0;
 
     const opts = {
         input_file:    inputFile,
@@ -994,18 +1437,28 @@ window.startConversion = async function() {
         video_bitrate: document.getElementById('convert-vbitrate')?.value || '',
         audio_bitrate: document.getElementById('convert-abitrate')?.value || '',
         resolution:    document.getElementById('convert-resolution')?.value || '',
+        crf:           crf,
+        start_time:    startTime,
+        end_time:      endTime,
         custom_args:   document.getElementById('convert-custom-args')?.value || ''
     };
 
     try {
-        await App.StartConversion(opts);
-        addLog(`Converting: ${inputFile}`);
-
-        // Show progress, hide start button
-        const startBtn = document.getElementById('convert-start-btn');
-        if (startBtn) startBtn.classList.add('hidden');
-        const progressDiv = document.getElementById('convert-progress');
-        if (progressDiv) progressDiv.classList.remove('hidden');
+        if (isBatch) {
+            // Batch mode
+            await App.StartBatchConversion(state.batchFiles, opts);
+            addLog(`Batch converting ${state.batchFiles.length} files`);
+            const startBtn = document.getElementById('convert-start-btn');
+            if (startBtn) startBtn.classList.add('hidden');
+        } else {
+            // Single file mode
+            await App.StartConversion(opts);
+            addLog(`Converting: ${inputFile}`);
+            const startBtn = document.getElementById('convert-start-btn');
+            if (startBtn) startBtn.classList.add('hidden');
+            const progressDiv = document.getElementById('convert-progress');
+            if (progressDiv) progressDiv.classList.remove('hidden');
+        }
     } catch (err) {
         alert('Failed to start conversion: ' + err);
         addLog(`Conversion error: ${err}`);
@@ -2191,6 +2644,42 @@ function setupEventListeners() {
         addVerboseLog(`ffmpeg download: ${message}`);
         const el = document.getElementById('ffmpeg-progress');
         if (el) { el.textContent = message; el.classList.remove('hidden'); }
+    });
+
+    // File drag-and-drop for the convert tab
+    OnFileDrop((x, y, paths) => {
+        if (state.currentTab !== 'convert' || !paths || paths.length === 0) return;
+
+        if (paths.length > 1) {
+            const valid = paths.filter(p => {
+                const name = p.split(/[\\/]/).pop();
+                const dot = name.lastIndexOf('.');
+                return dot > 0 && SUPPORTED_MEDIA_EXTENSIONS.has(name.slice(dot + 1).toLowerCase());
+            });
+            const rejected = paths.length - valid.length;
+            if (rejected > 0) addLog(`Skipped ${rejected} unsupported file(s)`);
+            if (valid.length > 0) addBatchFiles(valid);
+        } else {
+            const inputEl = document.getElementById('convert-input');
+            if (inputEl) {
+                inputEl.value = paths[0];
+                probeAndShowInfo(paths[0]);
+            }
+        }
+    }, true);
+
+    // Batch conversion progress
+    EventsOn('convert:batch:progress', (queue) => {
+        state.batchQueue = queue;
+        if (queue.status === 'completed' || queue.status === 'cancelled') {
+            state.batchQueue = null;
+            if (queue.status === 'completed') {
+                addLog(`Batch complete: ${queue.completed} succeeded, ${queue.failed} failed`);
+                showBatchResult(queue);
+            }
+        } else {
+            syncBatchUI(queue);
+        }
     });
 
     EventsOn('jsruntime:progress', (message) => {

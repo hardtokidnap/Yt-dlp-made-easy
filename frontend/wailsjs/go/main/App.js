@@ -14,8 +14,16 @@ export function BrowseInputFile() {
   return window['go']['main']['App']['BrowseInputFile']();
 }
 
+export function BrowseMultipleInputFiles() {
+  return window['go']['main']['App']['BrowseMultipleInputFiles']();
+}
+
 export function BrowseOutputFile(arg1) {
   return window['go']['main']['App']['BrowseOutputFile'](arg1);
+}
+
+export function CancelBatchConversion() {
+  return window['go']['main']['App']['CancelBatchConversion']();
 }
 
 export function CancelConversion() {
@@ -130,6 +138,10 @@ export function PauseDownload(arg1) {
   return window['go']['main']['App']['PauseDownload'](arg1);
 }
 
+export function ProbeFile(arg1) {
+  return window['go']['main']['App']['ProbeFile'](arg1);
+}
+
 export function RemoveDownload(arg1) {
   return window['go']['main']['App']['RemoveDownload'](arg1);
 }
@@ -148,6 +160,10 @@ export function ResumeDownload(arg1) {
 
 export function SaveSettings(arg1) {
   return window['go']['main']['App']['SaveSettings'](arg1);
+}
+
+export function StartBatchConversion(arg1, arg2) {
+  return window['go']['main']['App']['StartBatchConversion'](arg1, arg2);
 }
 
 export function StartConversion(arg1) {
