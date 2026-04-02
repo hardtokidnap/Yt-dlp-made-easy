@@ -978,7 +978,7 @@ async function probeAndShowInfo(filePath) {
     if (!panel || !grid) return;
 
     const ext = filePath.split('.').pop().toLowerCase();
-    const hasExtension = filePath.includes('.') && ext !== filePath.toLowerCase();
+    const hasExtension = filePath.includes('.') && filePath.lastIndexOf('.') !== 0;
     if (!hasExtension || !SUPPORTED_MEDIA_EXTENSIONS.has(ext)) {
         panel.classList.add('hidden');
         state._currentMediaInfo = null;
