@@ -25,6 +25,8 @@ A modern, lightweight GUI wrapper for [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 - **Audio extraction** with format and quality options
 - **Open Folder** button to reveal downloaded files in your file manager
 <img width="1016" height="1056" alt="image" src="https://github.com/user-attachments/assets/67a4ae3f-fe77-4899-a20f-d2eae47d6fe5" />
+<img width="987" height="848" alt="image" src="https://github.com/user-attachments/assets/4d8f4feb-5279-46c5-9f8f-bd5b68bee5f9" />
+
 
 ### Media Conversion
 - **Built-in FFmpeg converter** with automatic FFmpeg download
