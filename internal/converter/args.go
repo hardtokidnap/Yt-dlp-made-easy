@@ -18,6 +18,8 @@ type ConversionOptions struct {
 	AudioBitrate string `json:"audio_bitrate"`
 	Resolution   string `json:"resolution"`
 	CRF          int    `json:"crf"`
+	StartTime    string `json:"start_time"`
+	EndTime      string `json:"end_time"`
 	CustomArgs   string `json:"custom_args"`
 }
 
@@ -110,8 +112,21 @@ var audioOnlyFormats = map[string]bool{
 }
 
 // BuildArgs constructs the ffmpeg command-line arguments.
+// Arg order: [-y] [-ss start] [-i input] [-t duration] [codec/quality args] [output]
 func BuildArgs(opts ConversionOptions) []string {
-	args := []string{"-y", "-i", opts.InputFile}
+	args := []string{"-y"}
+
+	// Pre-input: -ss before -i for fast seek to nearest keyframe
+	if opts.StartTime != "" {
+		args = append(args, "-ss", opts.StartTime)
+	}
+
+	args = append(args, "-i", opts.InputFile)
+
+	// Post-input: -to for end time (interpreted relative to -ss when -ss is before -i)
+	if opts.EndTime != "" {
+		args = append(args, "-to", opts.EndTime)
+	}
 
 	isAudioOnly := audioOnlyFormats[opts.OutputFormat]
 
@@ -173,6 +188,27 @@ func BuildArgs(opts ConversionOptions) []string {
 	args = append(args, output)
 
 	return args
+}
+
+// ParseTimeToSeconds parses HH:MM:SS, MM:SS, or SS format to seconds.
+func ParseTimeToSeconds(t string) float64 {
+	parts := strings.Split(t, ":")
+	switch len(parts) {
+	case 3:
+		h, _ := strconv.ParseFloat(parts[0], 64)
+		m, _ := strconv.ParseFloat(parts[1], 64)
+		s, _ := strconv.ParseFloat(parts[2], 64)
+		return h*3600 + m*60 + s
+	case 2:
+		m, _ := strconv.ParseFloat(parts[0], 64)
+		s, _ := strconv.ParseFloat(parts[1], 64)
+		return m*60 + s
+	case 1:
+		s, _ := strconv.ParseFloat(parts[0], 64)
+		return s
+	default:
+		return 0
+	}
 }
 
 // splitArgs splits a string into arguments, respecting single and double quotes.

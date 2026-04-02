@@ -742,6 +742,23 @@ async function renderConvertTab() {
                 </div>
             </div>
 
+            <!-- Trim / Cut -->
+            <div id="trim-section" class="card hidden">
+                <h3 class="text-lg font-semibold mb-4">Trim / Cut</h3>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Start Time</label>
+                        <input type="text" id="trim-start" class="input-field" placeholder="00:00:00">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">End Time</label>
+                        <input type="text" id="trim-end" class="input-field" placeholder="End of file">
+                    </div>
+                </div>
+                <p class="text-xs text-gray-500 mt-2">Leave empty to use full duration. Format: HH:MM:SS or MM:SS</p>
+                <p id="trim-error" class="text-xs text-red-400 mt-1 hidden"></p>
+            </div>
+
             <!-- Presets -->
             <div class="card">
                 <h3 class="text-lg font-semibold mb-4">Quick Presets</h3>
@@ -965,10 +982,32 @@ async function probeAndShowInfo(filePath) {
         if (qualitySection) {
             qualitySection.style.display = info.has_video ? '' : 'none';
         }
+
+        // Show trim section, clear any previous error, and set end time placeholder
+        const trimSection = document.getElementById('trim-section');
+        if (trimSection) trimSection.classList.remove('hidden');
+        const trimError = document.getElementById('trim-error');
+        if (trimError) trimError.classList.add('hidden');
+        const trimEnd = document.getElementById('trim-end');
+        if (trimEnd && info.duration) trimEnd.placeholder = info.duration;
     } catch (err) {
         panel.classList.add('hidden');
         state._currentMediaInfo = null;
         addVerboseLog(`Probe failed: ${err}`);
+    }
+}
+
+// Parses HH:MM:SS, MM:SS, or SS to seconds. Returns null on invalid format.
+function parseTimeInput(str) {
+    if (!str || !str.trim()) return null;
+    const parts = str.trim().split(':');
+    if (parts.length > 3 || parts.some(p => isNaN(parseFloat(p)) || parseFloat(p) < 0)) return null;
+
+    switch (parts.length) {
+        case 3: return parseFloat(parts[0]) * 3600 + parseFloat(parts[1]) * 60 + parseFloat(parts[2]);
+        case 2: return parseFloat(parts[0]) * 60 + parseFloat(parts[1]);
+        case 1: return parseFloat(parts[0]);
+        default: return null;
     }
 }
 
@@ -1072,6 +1111,35 @@ window.startConversion = async function() {
         return;
     }
 
+    // Trim validation
+    const startTime = document.getElementById('trim-start')?.value || '';
+    const endTime = document.getElementById('trim-end')?.value || '';
+    const trimError = document.getElementById('trim-error');
+
+    if (startTime || endTime) {
+        const startSec = startTime ? parseTimeInput(startTime) : 0;
+        const endSec = endTime ? parseTimeInput(endTime) : Infinity;
+        const mediaDuration = state._currentMediaInfo?.duration_sec || Infinity;
+
+        if (startTime && startSec === null) {
+            if (trimError) { trimError.textContent = 'Invalid start time format'; trimError.classList.remove('hidden'); }
+            return;
+        }
+        if (endTime && endSec === null) {
+            if (trimError) { trimError.textContent = 'Invalid end time format'; trimError.classList.remove('hidden'); }
+            return;
+        }
+        if (endSec !== Infinity && startSec >= endSec) {
+            if (trimError) { trimError.textContent = 'Start time must be before end time'; trimError.classList.remove('hidden'); }
+            return;
+        }
+        if (endSec !== Infinity && mediaDuration !== Infinity && endSec > mediaDuration + 1) {
+            if (trimError) { trimError.textContent = 'End time exceeds file duration'; trimError.classList.remove('hidden'); }
+            return;
+        }
+    }
+    if (trimError) trimError.classList.add('hidden');
+
     const crfEl = document.getElementById('convert-crf');
     const crfActive = crfEl?.dataset.active === 'true';
     const crf = crfActive ? 32 - parseInt(crfEl.value, 10) : 0;
@@ -1087,6 +1155,8 @@ window.startConversion = async function() {
         audio_bitrate: document.getElementById('convert-abitrate')?.value || '',
         resolution:    document.getElementById('convert-resolution')?.value || '',
         crf:           crf,
+        start_time:    startTime,
+        end_time:      endTime,
         custom_args:   document.getElementById('convert-custom-args')?.value || ''
     };
 
