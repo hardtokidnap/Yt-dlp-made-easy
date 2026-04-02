@@ -972,13 +972,17 @@ const SUPPORTED_MEDIA_EXTENSIONS = new Set([
     'mp3','m4a','aac','ogg','opus','flac','wav','wma','weba'
 ]);
 
+let _probeId = 0;
+
 async function probeAndShowInfo(filePath) {
     const panel = document.getElementById('media-info-panel');
     const grid = document.getElementById('media-info-grid');
     if (!panel || !grid) return;
 
-    const ext = filePath.split('.').pop().toLowerCase();
-    const hasExtension = filePath.includes('.') && filePath.lastIndexOf('.') !== 0;
+    const basename = filePath.split(/[\\/]/).pop();
+    const dotIdx = basename.lastIndexOf('.');
+    const hasExtension = dotIdx > 0;
+    const ext = hasExtension ? basename.slice(dotIdx + 1).toLowerCase() : '';
     if (!hasExtension || !SUPPORTED_MEDIA_EXTENSIONS.has(ext)) {
         panel.classList.add('hidden');
         state._currentMediaInfo = null;
@@ -992,8 +996,11 @@ async function probeAndShowInfo(filePath) {
         return;
     }
 
+    const myProbeId = ++_probeId;
+
     try {
         const info = await App.ProbeFile(filePath);
+        if (myProbeId !== _probeId) return; // Newer probe started, discard stale results
         state._currentMediaInfo = info;
 
         const items = [];
@@ -1049,6 +1056,7 @@ async function probeAndShowInfo(filePath) {
         const trimEnd = document.getElementById('trim-end');
         if (trimEnd && info.duration) trimEnd.placeholder = info.duration;
     } catch (err) {
+        if (myProbeId !== _probeId) return;
         panel.classList.add('hidden');
         state._currentMediaInfo = null;
         addVerboseLog(`Probe failed: ${err}`);
@@ -1234,9 +1242,24 @@ function renderBatchFileList() {
     `;
 }
 
+function clearMediaInfoAndTrim() {
+    state._currentMediaInfo = null;
+    const panel = document.getElementById('media-info-panel');
+    if (panel) panel.classList.add('hidden');
+    const trimSection = document.getElementById('trim-section');
+    if (trimSection) trimSection.classList.add('hidden');
+    const trimStart = document.getElementById('trim-start');
+    if (trimStart) trimStart.value = '';
+    const trimEnd = document.getElementById('trim-end');
+    if (trimEnd) { trimEnd.value = ''; trimEnd.placeholder = ''; }
+}
+
 window.clearBatchFiles = function() {
     state.batchFiles = [];
     renderBatchFileList();
+    clearMediaInfoAndTrim();
+    const inputEl = document.getElementById('convert-input');
+    if (inputEl) inputEl.value = '';
 };
 
 window.removeBatchFile = function(idx) {
@@ -1244,6 +1267,7 @@ window.removeBatchFile = function(idx) {
     renderBatchFileList();
     if (state.batchFiles.length === 0) {
         document.getElementById('convert-input').value = '';
+        clearMediaInfoAndTrim();
     } else if (state.batchFiles.length === 1) {
         const inputEl = document.getElementById('convert-input');
         if (inputEl) inputEl.value = state.batchFiles[0];
@@ -2628,8 +2652,9 @@ function setupEventListeners() {
 
         if (paths.length > 1) {
             const valid = paths.filter(p => {
-                const ext = p.split('.').pop().toLowerCase();
-                return p.includes('.') && SUPPORTED_MEDIA_EXTENSIONS.has(ext);
+                const name = p.split(/[\\/]/).pop();
+                const dot = name.lastIndexOf('.');
+                return dot > 0 && SUPPORTED_MEDIA_EXTENSIONS.has(name.slice(dot + 1).toLowerCase());
             });
             const rejected = paths.length - valid.length;
             if (rejected > 0) addLog(`Skipped ${rejected} unsupported file(s)`);
