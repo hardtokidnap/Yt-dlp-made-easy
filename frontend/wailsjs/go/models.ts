@@ -208,6 +208,8 @@ export namespace converter {
 	    audio_bitrate: string;
 	    resolution: string;
 	    crf: number;
+	    start_time: string;
+	    end_time: string;
 	    custom_args: string;
 	
 	    static createFrom(source: any = {}) {
@@ -226,6 +228,8 @@ export namespace converter {
 	        this.audio_bitrate = source["audio_bitrate"];
 	        this.resolution = source["resolution"];
 	        this.crf = source["crf"];
+	        this.start_time = source["start_time"];
+	        this.end_time = source["end_time"];
 	        this.custom_args = source["custom_args"];
 	    }
 	}

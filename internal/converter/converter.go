@@ -36,11 +36,21 @@ type ConversionJob struct {
 
 // Converter manages a single ffmpeg conversion process.
 type Converter struct {
-	job        *ConversionJob
-	cancel     context.CancelFunc
-	totalSecs  float64
-	OnProgress func(job *ConversionJob)
-	OnLog      func(line string)
+	job               *ConversionJob
+	cancel            context.CancelFunc
+	totalSecs         float64
+	effectiveDuration float64
+	OnProgress        func(job *ConversionJob)
+	OnLog             func(line string)
+}
+
+// SetEffectiveDuration overrides the total duration used for progress calculation.
+// Use when trimming so progress is based on clip length, not full file duration.
+func (c *Converter) SetEffectiveDuration(secs float64) {
+	if secs < 0 {
+		secs = 0
+	}
+	c.effectiveDuration = secs
 }
 
 func NewConverter(job *ConversionJob) *Converter {
@@ -52,6 +62,9 @@ func (c *Converter) Start(ctx context.Context, opts ConversionOptions) error {
 	c.cancel = cancel
 
 	args := BuildArgs(opts)
+	if len(args) == 0 {
+		return fmt.Errorf("BuildArgs returned empty arguments")
+	}
 	c.job.OutputFile = args[len(args)-1]
 	c.job.Status = StatusRunning
 	c.job.StartedAt = time.Now()
@@ -144,8 +157,14 @@ func (c *Converter) parseOutput(line string) {
 	// Capture current time position for progress
 	if m := timeRe.FindStringSubmatch(line); m != nil {
 		currentSecs := parseDuration(m)
-		if c.totalSecs > 0 {
-			c.job.Progress = (currentSecs / c.totalSecs) * 100
+
+		// Use effectiveDuration (trim length) if set, otherwise full file duration
+		denom := c.effectiveDuration
+		if denom == 0 {
+			denom = c.totalSecs
+		}
+		if denom > 0 {
+			c.job.Progress = (currentSecs / denom) * 100
 			if c.job.Progress > 100 {
 				c.job.Progress = 100
 			}

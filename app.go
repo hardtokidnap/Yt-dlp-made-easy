@@ -323,6 +323,20 @@ func (a *App) StartConversion(opts converter.ConversionOptions) (*converter.Conv
 	c.OnLog = func(line string) {
 		wailsruntime.EventsEmit(a.ctx, "convert:log", line)
 	}
+
+	// When trimming, set the effective duration so progress is based on clip length.
+	// With -ss before -i, ffmpeg's time= output starts from 0 and counts up to the clip length.
+	if opts.EndTime != "" {
+		startSec := 0.0
+		if opts.StartTime != "" {
+			startSec = converter.ParseTimeToSeconds(opts.StartTime)
+		}
+		endSec := converter.ParseTimeToSeconds(opts.EndTime)
+		if endSec > startSec {
+			c.SetEffectiveDuration(endSec - startSec)
+		}
+	}
+
 	a.converter = c
 
 	go func() {
