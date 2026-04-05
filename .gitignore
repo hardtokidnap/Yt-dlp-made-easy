@@ -9,6 +9,7 @@ __pycache__/
 
 # LLMs
 .claudeignore
+.claude/settings.local.json
 
 # C extensions
 *.so
