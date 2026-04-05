@@ -1,0 +1,153 @@
+language: en-US
+tone_instructions: >-
+  Adopt a concise, matter-of-fact style that gets straight to the point without unnecessary pleasantries.
+early_access: false
+enable_free_tier: true
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  high_level_summary_placeholder: '@coderabbitai summary'
+  high_level_summary_in_walkthrough: false
+  auto_title_placeholder: '@coderabbitai'
+  auto_title_instructions: ''
+  review_status: true
+  commit_status: true
+  fail_commit_status: false
+  collapse_walkthrough: false
+  changed_files_summary: false
+  sequence_diagrams: false
+  assess_linked_issues: true
+  related_issues: true
+  related_prs: true
+  suggested_reviewers: true
+  auto_assign_reviewers: false
+  poem: false
+  suggested_labels: false
+  auto_apply_labels: true
+  path_filters: []
+  path_instructions: []
+  abort_on_close: true
+  disable_cache: false
+  auto_review:
+    enabled: true
+    auto_incremental_review: false
+    ignore_title_keywords: []
+    labels: []
+    drafts: false
+    base_branches: []
+    ignore_usernames: []
+  finishing_touches:
+    docstrings:
+      enabled: true
+    unit_tests:
+      enabled: true
+  tools:
+    ast-grep:
+      rule_dirs: []
+      util_dirs: []
+      essential_rules: true
+      packages: []
+    shellcheck:
+      enabled: true
+    ruff:
+      enabled: false
+    github-checks:
+      enabled: true
+      timeout_ms: 180000
+    languagetool:
+      enabled: true
+      enabled_rules: []
+      disabled_rules: []
+      enabled_categories: []
+      disabled_categories: []
+      enabled_only: false
+      level: default
+    gitleaks:
+      enabled: true
+    checkov:
+      enabled: true
+  pre_merge_checks:
+    custom_checks:
+      - mode: error
+        name: "Go: Settings thread safety"
+        instructions: |
+          Flag any direct read or write access to fields on the `Settings` struct (or any of its nested structs)
+          that happens outside of the `Get*()`/`Set*()` accessor methods defined in `internal/config/settings.go`.
+          Direct field access across goroutines bypasses the internal `sync.RWMutex` and causes data races.
+          Only flag accesses in Go files; the accessor methods themselves are exempt.
+      - mode: error
+        name: "Go: New Settings fields need mergeDefaults"
+        instructions: |
+          When a PR adds a new field to the `Settings` struct (or any nested struct) in `internal/config/settings.go`,
+          verify that a corresponding zero-value check for that field also appears in `mergeDefaults()` in the same file.
+          Without it, older saved configs will silently ignore the new field and users will get the zero value instead
+          of the intended default.
+      - mode: error
+        name: "Wails: No new event names without contract update"
+        instructions: |
+          Any call to `wailsruntime.EventsEmit` that uses an event name not listed in `.claude/rules/event-contract.md`
+          must be flagged. The JS side in `frontend/src/main.js` hardcodes event listeners; undocumented events will be
+          silently dropped. Either add the new event to the contract doc, or remove the emission.
+      - mode: error
+        name: "Frontend: XSS in inline onclick handlers"
+        instructions: |
+          In `frontend/src/main.js` and any other JS files, flag any place where a file path, URL, or other
+          user-controlled or external string is interpolated directly into an inline `onclick="..."` attribute
+          or into a string passed to `innerHTML`/`insertAdjacentHTML` without proper JS-string escaping.
+          This was a real past bug. The value must be escaped so that quotes, backslashes, and special characters
+          cannot break out of the JS string context.
+      - mode: warning
+        name: "Go: FFmpeg output must use scanCRLF"
+        instructions: |
+          FFmpeg writes progress lines terminated with `\r` (carriage return), not `\n`. Any code that reads
+          FFmpeg stdout or stderr must use the `scanCRLF` split function from `internal/converter/converter.go`.
+          Flag any new or modified code that spawns an FFmpeg process and scans its output with `bufio.Scanner`
+          without explicitly setting a `scanCRLF` split function, as standard line scanners silently drop all
+          progress events.
+      - mode: warning
+        name: "Go: No bundled binaries"
+        instructions: |
+          Flag any PR that embeds yt-dlp, FFmpeg, ffprobe, or Deno binaries directly into the repository or
+          into the Go binary via `go:embed`. These tools are fetched at runtime into the app data directory
+          to keep the binary size minimal. Committing them is intentionally prohibited.
+      - mode: warning
+        name: "Go: Windows process spawning hygiene"
+        instructions: |
+          Any code that spawns a child process on Windows must set `CREATE_NO_WINDOW` (0x08000000) and
+          `HideWindow: true` on the `SysProcAttr`, unless the spawned program is a GUI application (e.g.
+          explorer.exe). Flag new `exec.Command` calls in Windows-specific files that omit these flags.
+chat:
+  art: false
+  auto_reply: true
+  integrations:
+    jira:
+      usage: disabled
+    linear:
+      usage: auto
+knowledge_base:
+  opt_out: false
+  web_search:
+    enabled: true
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "**/.claude/rules/*"
+      - "**/CLAUDE.md"
+  learnings:
+    scope: auto
+  issues:
+    scope: auto
+  jira:
+    usage: disabled
+    project_keys: []
+  linear:
+    usage: auto
+    team_keys: []
+  pull_requests:
+    scope: auto
+code_generation:
+  docstrings:
+    language: en-US
+    path_instructions: []
+
