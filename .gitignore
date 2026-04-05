@@ -8,7 +8,6 @@ __pycache__/
 *$py.class
 
 # LLMs
-.claudeignore
 .claude/settings.local.json
 .claude/plans/
 
