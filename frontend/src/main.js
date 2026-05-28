@@ -20,6 +20,7 @@ const state = {
 const tabs = [
     {id: 'download', label: 'Download', icon: '⬇️'},
     {id: 'convert', label: 'Convert', icon: '🔄'},
+    {id: 'spotify', label: 'Spotify', icon: '🎵'},
     {id: 'history', label: 'History', icon: '📜'},
     {id: 'settings', label: 'Settings', icon: '⚙️'},
     {id: 'log', label: 'Log', icon: '📋'}
@@ -83,6 +84,7 @@ window.switchTab = function(tabId) {
     const contentMap = {
         'download': renderDownloadTab,
         'convert': renderConvertTab,
+        'spotify': renderSpotifyTab,
         'history': renderHistoryTab,
         'settings': renderSettingsTab,
         'log': renderLogTab
@@ -1647,6 +1649,141 @@ window.openConvertOutput = function() {
     }
 };
 
+// Spotify Tab
+// Isolated subsystem: own portable Python runtime, own progress UI. Does not
+// touch the main download queue / history.
+async function renderSpotifyTab() {
+    const content = document.getElementById('tab-content');
+    let info = { python_installed: false, spotdl_installed: false };
+    try {
+        info = await App.GetSpotifyRuntimeInfo();
+    } catch (e) {
+        addVerboseLog(`Spotify runtime check failed: ${e}`);
+    }
+    const ready = info.python_installed && info.spotdl_installed;
+
+    content.innerHTML = `
+        <div class="max-w-4xl mx-auto space-y-6">
+            ${!ready ? `
+                <div class="card border border-yellow-700 bg-yellow-900/20">
+                    <h3 class="text-lg font-semibold mb-2">🎵 Spotify runtime not installed</h3>
+                    <p class="text-sm text-gray-300 mb-3">
+                        Spotify downloads require a portable Python runtime and the
+                        <code class="text-xs">spotdl</code> tool. First install is roughly
+                        80 MB, fetched into the app data folder. Your system Python is
+                        not touched.
+                    </p>
+                    <button id="spotify-install-btn" class="btn-primary" onclick="window.installSpotifyRuntime()">
+                        Install Spotify runtime
+                    </button>
+                    <pre id="spotify-install-log" class="mt-3 text-xs text-gray-400 max-h-40 overflow-auto hidden"></pre>
+                </div>
+            ` : `
+                <div class="card">
+                    <h2 class="text-xl font-semibold mb-4">Download from Spotify</h2>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Spotify URL</label>
+                            <div class="flex gap-2">
+                                <input id="spotify-url" class="input-field flex-1" placeholder="https://open.spotify.com/track/... or playlist/album URL" />
+                                <button class="btn-secondary" onclick="window.previewSpotify()">Preview</button>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-1">
+                                Audio is fetched from YouTube via spotdl. Same ban surface as the Download tab. Use a throwaway account when in doubt.
+                            </p>
+                        </div>
+                        <div id="spotify-preview" class="hidden"></div>
+                        <button id="spotify-download-btn" class="btn-primary hidden" onclick="window.startSpotifyDownload()">
+                            Download Selected
+                        </button>
+                    </div>
+                </div>
+
+                <div id="spotify-progress-card" class="card hidden">
+                    <div class="flex justify-between items-center mb-2">
+                        <span id="spotify-progress-status" class="text-sm text-gray-300">Starting...</span>
+                        <div class="flex items-center gap-3">
+                            <span id="spotify-progress-count" class="text-sm text-gray-400"></span>
+                            <button onclick="window.cancelSpotifyDownload()" class="btn-danger text-sm">Cancel</button>
+                        </div>
+                    </div>
+                    <pre id="spotify-log" class="text-xs text-gray-400 max-h-48 overflow-auto bg-black/30 p-2 rounded"></pre>
+                </div>
+
+                <div class="text-xs text-gray-500">
+                    Python: ${escapeHtml(info.python_version || 'unknown')} · spotdl: ${escapeHtml(info.spotdl_version || 'unknown')}
+                </div>
+            `}
+        </div>
+    `;
+}
+
+window.installSpotifyRuntime = async function() {
+    const log = document.getElementById('spotify-install-log');
+    const btn = document.getElementById('spotify-install-btn');
+    if (btn) btn.disabled = true;
+    if (log) log.classList.remove('hidden');
+    try {
+        await App.InstallSpotifyRuntime();
+        // Re-render the tab now that install is done.
+        if (state.currentTab === 'spotify') await renderSpotifyTab();
+    } catch (e) {
+        if (log) log.textContent += '\nERROR: ' + (e?.message || e);
+        if (btn) btn.disabled = false;
+    }
+};
+
+window.previewSpotify = async function() {
+    const url = document.getElementById('spotify-url')?.value?.trim();
+    if (!url) return;
+    const previewBox = document.getElementById('spotify-preview');
+    previewBox.classList.remove('hidden');
+    previewBox.innerHTML = '<p class="text-sm text-gray-400">Resolving tracks via spotdl...</p>';
+    try {
+        const tracks = await App.PreviewSpotifyURL(url);
+        if (!tracks || tracks.length === 0) {
+            previewBox.innerHTML = '<p class="text-sm text-red-400">No tracks found.</p>';
+            return;
+        }
+        previewBox.innerHTML = `
+            <p class="text-sm text-gray-300 mb-2">${tracks.length} track(s) found:</p>
+            <div class="max-h-64 overflow-auto space-y-1 border border-gray-700 rounded p-2">
+            ${tracks.map(t => `
+                <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-800/50 px-2 py-1 rounded">
+                    <input type="checkbox" class="spotify-track-cb" data-url="${escapeHtml(t.url || '')}" checked>
+                    <span class="flex-1 truncate">${escapeHtml(t.artist || 'Unknown')} - ${escapeHtml(t.title || 'Unknown')}</span>
+                </label>
+            `).join('')}
+            </div>
+        `;
+        const dlBtn = document.getElementById('spotify-download-btn');
+        if (dlBtn) dlBtn.classList.remove('hidden');
+    } catch (e) {
+        previewBox.innerHTML = '<p class="text-sm text-red-400">Preview failed: ' + escapeHtml(String(e?.message || e)) + '</p>';
+    }
+};
+
+window.startSpotifyDownload = async function() {
+    const checked = document.querySelectorAll('.spotify-track-cb:checked');
+    const urls = Array.from(checked).map(el => el.dataset.url).filter(Boolean);
+    if (urls.length === 0) return;
+
+    const card = document.getElementById('spotify-progress-card');
+    if (card) card.classList.remove('hidden');
+    const log = document.getElementById('spotify-log');
+    if (log) log.textContent = '';
+
+    try {
+        await App.DownloadSpotifyTracks(urls);
+    } catch (e) {
+        if (log) log.textContent += '\nERROR: ' + (e?.message || e) + '\n';
+    }
+};
+
+window.cancelSpotifyDownload = function() {
+    try { App.CancelSpotifyDownload(); } catch (_) { /* ignore */ }
+};
+
 // History Tab
 function renderHistoryTab() {
     const content = document.getElementById('tab-content');
@@ -2741,6 +2878,46 @@ function setupEventListeners() {
         addVerboseLog(`ffmpeg download: ${message}`);
         const el = document.getElementById('ffmpeg-progress');
         if (el) { el.textContent = message; el.classList.remove('hidden'); }
+    });
+
+    // Spotify subsystem events
+    EventsOn('spotify:runtime:progress', (msg) => {
+        const log = document.getElementById('spotify-install-log');
+        if (log) {
+            log.textContent += msg + '\n';
+            log.scrollTop = log.scrollHeight;
+        }
+    });
+
+    EventsOn('spotify:progress', (job) => {
+        const status = document.getElementById('spotify-progress-status');
+        const count  = document.getElementById('spotify-progress-count');
+        const log    = document.getElementById('spotify-log');
+        if (status) {
+            status.textContent = job.status === 'running' ? 'Downloading...' : job.status;
+        }
+        if (count) {
+            count.textContent = `${job.completed}/${job.total}` + (job.failed > 0 ? ` (${job.failed} failed)` : '');
+        }
+        if (log && job.last_line) {
+            log.textContent += job.last_line + '\n';
+            log.scrollTop = log.scrollHeight;
+        }
+    });
+
+    EventsOn('spotify:complete', (job) => {
+        const status = document.getElementById('spotify-progress-status');
+        if (status) {
+            status.textContent = job.status === 'completed' ? 'Done.' : ('Stopped: ' + job.status);
+        }
+    });
+
+    EventsOn('spotify:error', (msg) => {
+        const log = document.getElementById('spotify-log');
+        if (log) {
+            log.textContent += '\nERROR: ' + msg + '\n';
+            log.scrollTop = log.scrollHeight;
+        }
     });
 
     // File drag-and-drop for the convert tab
