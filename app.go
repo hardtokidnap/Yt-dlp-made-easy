@@ -303,6 +303,24 @@ func (a *App) ProbeFile(filePath string) (*converter.MediaInfo, error) {
 	return converter.ProbeFile(filePath)
 }
 
+// EstimateConversionSize predicts the output file size for the given conversion
+// options. Frontend calls this on every option change (debounced) to keep the
+// size hint live. Returns Confidence "unknown" when probe fails rather than an
+// error so the UI can simply show a blank/neutral hint.
+func (a *App) EstimateConversionSize(opts converter.ConversionOptions) (converter.SizeEstimate, error) {
+	if opts.InputFile == "" {
+		return converter.SizeEstimate{Confidence: "unknown", Note: "No input file selected."}, nil
+	}
+	if !converter.IsFFmpegInstalled() {
+		return converter.SizeEstimate{Confidence: "unknown", Note: "FFmpeg not installed."}, nil
+	}
+	info, err := converter.ProbeFile(opts.InputFile)
+	if err != nil {
+		return converter.SizeEstimate{Confidence: "unknown", Note: "Could not probe input file."}, nil
+	}
+	return converter.EstimateOutputSize(opts, info), nil
+}
+
 func (a *App) StartConversion(opts converter.ConversionOptions) (*converter.ConversionJob, error) {
 	if !converter.IsFFmpegInstalled() {
 		return nil, fmt.Errorf("FFmpeg is not installed. Please download it first.")
