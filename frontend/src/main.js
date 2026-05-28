@@ -885,6 +885,19 @@ async function renderConvertTab() {
                         </div>
                     </div>
 
+                    <div id="quality-tier-section">
+                        <label class="block text-sm font-medium mb-2">Quality Tier</label>
+                        <select id="convert-quality-tier" class="select-field w-full" onchange="window.onQualityTierChange(this.value)">
+                            <option value="">Auto (use bitrate / preset above)</option>
+                            <option value="low">Low (smaller files, faster)</option>
+                            <option value="medium">Medium (balanced)</option>
+                            <option value="high">High (slower, better quality)</option>
+                            <option value="lossless">Lossless (largest files)</option>
+                            <option value="custom">Custom (set CRF manually below)</option>
+                        </select>
+                        <p class="text-xs text-gray-500 mt-1" id="quality-tier-hint">Tier off: bitrate / preset settings above apply directly.</p>
+                    </div>
+
                     <div id="quality-slider-section">
                         <label class="block text-sm font-medium mb-2">Quality</label>
                         <div class="flex items-center gap-3">
@@ -1076,6 +1089,19 @@ function parseTimeInput(str) {
         default: return null;
     }
 }
+
+window.onQualityTierChange = function(tier) {
+    const hint = document.getElementById('quality-tier-hint');
+    const hints = {
+        'low':      'Low: smaller file, faster encode (~CRF 28 for libx264, 96k audio).',
+        'medium':   'Medium: balanced quality/size (~CRF 23 for libx264, 192k audio).',
+        'high':     'High: best quality, slower encode (~CRF 18 for libx264, 256k audio).',
+        'lossless': 'Lossless: zero quality loss, very large files. Audio output forced to FLAC.',
+        'custom':   'Custom: set CRF manually using the slider below.',
+        '':         'Tier off: bitrate / preset settings above apply directly.',
+    };
+    if (hint) hint.textContent = hints[tier] || '';
+};
 
 window.onCrfSliderChange = function(val) {
     const label = document.getElementById('crf-label');
@@ -1440,7 +1466,8 @@ window.startConversion = async function() {
         crf:           crf,
         start_time:    startTime,
         end_time:      endTime,
-        custom_args:   document.getElementById('convert-custom-args')?.value || ''
+        custom_args:   document.getElementById('convert-custom-args')?.value || '',
+        quality_tier:  document.getElementById('convert-quality-tier')?.value || ''
     };
 
     try {
