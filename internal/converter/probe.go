@@ -13,6 +13,7 @@ type MediaInfo struct {
 	DurationSec float64 `json:"duration_sec"`
 	Width       int     `json:"width"`
 	Height      int     `json:"height"`
+	FPS         float64 `json:"fps"`
 	VideoCodec  string  `json:"video_codec"`
 	AudioCodec  string  `json:"audio_codec"`
 	Bitrate      string  `json:"bitrate"`
@@ -35,11 +36,12 @@ type ffprobeFormat struct {
 }
 
 type ffprobeStream struct {
-	CodecType string `json:"codec_type"`
-	CodecName string `json:"codec_name"`
-	Width     int    `json:"width"`
-	Height    int    `json:"height"`
-	BitRate   string `json:"bit_rate"`
+	CodecType  string `json:"codec_type"`
+	CodecName  string `json:"codec_name"`
+	Width      int    `json:"width"`
+	Height     int    `json:"height"`
+	BitRate    string `json:"bit_rate"`
+	RFrameRate string `json:"r_frame_rate"`
 }
 
 // ProbeFile runs ffprobe on the given file and returns parsed media information.
@@ -92,6 +94,7 @@ func ProbeFile(filePath string) (*MediaInfo, error) {
 				info.VideoCodec = strings.ToUpper(s.CodecName)
 				info.Width = s.Width
 				info.Height = s.Height
+				info.FPS = parseFrameRate(s.RFrameRate)
 			}
 		case "audio":
 			if !info.HasAudio {
@@ -132,4 +135,22 @@ func formatBitrate(bps int64) string {
 		return fmt.Sprintf("%.1f Mbps", float64(bps)/1_000_000)
 	}
 	return fmt.Sprintf("%.0f kbps", float64(bps)/1_000)
+}
+
+// parseFrameRate parses an ffprobe frame rate string ("30/1" or "30000/1001")
+// into a float. Returns 0 on unparseable input or divide-by-zero.
+func parseFrameRate(s string) float64 {
+	if s == "" {
+		return 0
+	}
+	parts := strings.SplitN(s, "/", 2)
+	if len(parts) != 2 {
+		return 0
+	}
+	num, err1 := strconv.ParseFloat(parts[0], 64)
+	den, err2 := strconv.ParseFloat(parts[1], 64)
+	if err1 != nil || err2 != nil || den == 0 {
+		return 0
+	}
+	return num / den
 }
