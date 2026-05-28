@@ -92,7 +92,7 @@ type PreviewOptions struct {
 // PreviewURL runs `spotdl save` on the given URL and returns the resolved tracks
 // without downloading audio. Used to populate a track-picker UI.
 func PreviewURL(ctx context.Context, url string, prevOpts PreviewOptions) ([]Track, error) {
-	tmpFile, err := os.CreateTemp("", "spotdl-preview-*.json")
+	tmpFile, err := os.CreateTemp("", "spotdl-preview-*.spotdl")
 	if err != nil {
 		return nil, err
 	}
