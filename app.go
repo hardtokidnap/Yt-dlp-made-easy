@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -14,6 +15,7 @@ import (
 	"ytdlp-easy/internal/downloader"
 	"ytdlp-easy/internal/history"
 	"ytdlp-easy/internal/jsruntime"
+	"ytdlp-easy/internal/spotify"
 	"ytdlp-easy/internal/updater"
 	"ytdlp-easy/internal/util"
 )
@@ -28,6 +30,8 @@ type App struct {
 	updater   *updater.Updater
 	converter   *converter.Converter
 	batchQueue  *converter.BatchQueue
+	spotifyJob  *spotify.Job
+	spotifyMu   sync.Mutex
 }
 
 func NewApp() *App {
@@ -481,4 +485,79 @@ func (a *App) GetRecentCompletedDownloads() []map[string]string {
 		})
 	}
 	return result
+}
+
+// --- Spotify subsystem ---
+// Fully isolated: no shared yt-dlp binary, queue, history, or cookies.
+// Shares only the managed FFmpeg via the --ffmpeg flag.
+
+// GetSpotifyRuntimeInfo reports the install state of the portable Python and spotdl.
+// Cheap call, frontend uses it on every Spotify-tab open to decide which UI to show.
+func (a *App) GetSpotifyRuntimeInfo() spotify.RuntimeInfo {
+	return spotify.DetectRuntime()
+}
+
+// InstallSpotifyRuntime downloads Python embeddable + spotdl into the app data
+// folder. Progress is emitted as "spotify:runtime:progress" events.
+func (a *App) InstallSpotifyRuntime() error {
+	return spotify.InstallRuntime(a.ctx, func(msg string) {
+		wailsruntime.EventsEmit(a.ctx, "spotify:runtime:progress", msg)
+	})
+}
+
+// PreviewSpotifyURL resolves track metadata for a Spotify URL (track / playlist
+// / album) without downloading audio. 30-second timeout in case spotdl hangs.
+func (a *App) PreviewSpotifyURL(url string) ([]spotify.Track, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return spotify.PreviewURL(ctx, url)
+}
+
+// DownloadSpotifyTracks starts a spotdl download in the background. Progress
+// is emitted as "spotify:progress" + "spotify:complete" events.
+func (a *App) DownloadSpotifyTracks(urls []string) (string, error) {
+	if len(urls) == 0 {
+		return "", fmt.Errorf("no URLs provided")
+	}
+	a.spotifyMu.Lock()
+	if a.spotifyJob != nil && a.spotifyJob.Status == "running" {
+		a.spotifyMu.Unlock()
+		return "", fmt.Errorf("a Spotify download is already running")
+	}
+	a.spotifyMu.Unlock()
+
+	settings := a.settings.GetSpotify()
+	opts := spotify.Options{
+		URLs:         urls,
+		OutputFolder: settings.OutputFolder,
+		Format:       settings.Format,
+		Bitrate:      settings.Bitrate,
+		Threads:      settings.Threads,
+		FFmpegPath:   converter.FFmpegPath(),
+	}
+	go func() {
+		ctx := context.Background()
+		_, err := spotify.Download(ctx, opts, func(job *spotify.Job) {
+			a.spotifyMu.Lock()
+			a.spotifyJob = job
+			a.spotifyMu.Unlock()
+			wailsruntime.EventsEmit(a.ctx, "spotify:progress", job)
+			if job.Status == "completed" || job.Status == "failed" || job.Status == "cancelled" {
+				wailsruntime.EventsEmit(a.ctx, "spotify:complete", job)
+			}
+		})
+		if err != nil {
+			wailsruntime.EventsEmit(a.ctx, "spotify:error", err.Error())
+		}
+	}()
+	return "started", nil
+}
+
+// CancelSpotifyDownload kills the in-flight spotdl process if any.
+func (a *App) CancelSpotifyDownload() {
+	a.spotifyMu.Lock()
+	defer a.spotifyMu.Unlock()
+	if a.spotifyJob != nil {
+		a.spotifyJob.Cancel()
+	}
 }
