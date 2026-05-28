@@ -11,6 +11,10 @@ import (
 	"ytdlp-easy/internal/util"
 )
 
+// Compile-time check that hiddenCmdCtx exists on every platform via the
+// build-tagged install_windows.go / install_other.go files.
+var _ = hiddenCmdCtx
+
 // RuntimeInfo describes the install state of the portable Python and spotdl.
 type RuntimeInfo struct {
 	PythonInstalled bool   `json:"python_installed"`
@@ -38,10 +42,12 @@ func DetectRuntime() RuntimeInfo {
 
 // runVersion runs the given executable with the given args and returns the
 // first line of combined output, or "" on failure. 5-second timeout.
+// Uses hiddenCmdCtx on Windows so probing for python / spotdl versions does
+// not flash a console window every time the user clicks the Spotify tab.
 func runVersion(exe string, args ...string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, exe, args...).CombinedOutput()
+	out, err := hiddenCmdCtx(ctx, exe, args...).CombinedOutput()
 	if err != nil {
 		var exitErr *exec.ExitError
 		if !errors.As(err, &exitErr) {

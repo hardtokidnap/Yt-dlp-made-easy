@@ -507,10 +507,22 @@ func (a *App) InstallSpotifyRuntime() error {
 
 // PreviewSpotifyURL resolves track metadata for a Spotify URL (track / playlist
 // / album) without downloading audio. 30-second timeout in case spotdl hangs.
+// Passes through AudioProvider / cookies / proxy so the ytmusic-connection
+// probe spotdl runs on 'save' uses the same workaround the download flow will.
 func (a *App) PreviewSpotifyURL(url string) ([]spotify.Track, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	return spotify.PreviewURL(ctx, url)
+	prevOpts := spotify.PreviewOptions{
+		AudioProvider: a.settings.GetSpotify().AudioProvider,
+	}
+	sp := a.settings.GetSpotify()
+	if sp.UseAuthCookies {
+		prevOpts.CookieFile = a.settings.GetAuth().CookiesFile
+	}
+	if sp.UseProxy {
+		prevOpts.Proxy = a.settings.GetNetwork().Proxy
+	}
+	return spotify.PreviewURL(ctx, url, prevOpts)
 }
 
 // DownloadSpotifyTracks starts a spotdl download in the background. Progress
@@ -528,12 +540,19 @@ func (a *App) DownloadSpotifyTracks(urls []string) (string, error) {
 
 	settings := a.settings.GetSpotify()
 	opts := spotify.Options{
-		URLs:         urls,
-		OutputFolder: settings.OutputFolder,
-		Format:       settings.Format,
-		Bitrate:      settings.Bitrate,
-		Threads:      settings.Threads,
-		FFmpegPath:   converter.FFmpegPath(),
+		URLs:          urls,
+		OutputFolder:  settings.OutputFolder,
+		Format:        settings.Format,
+		Bitrate:       settings.Bitrate,
+		Threads:       settings.Threads,
+		FFmpegPath:    converter.FFmpegPath(),
+		AudioProvider: settings.AudioProvider,
+	}
+	if settings.UseAuthCookies {
+		opts.CookieFile = a.settings.GetAuth().CookiesFile
+	}
+	if settings.UseProxy {
+		opts.Proxy = a.settings.GetNetwork().Proxy
 	}
 	go func() {
 		ctx := context.Background()

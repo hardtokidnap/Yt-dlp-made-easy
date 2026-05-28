@@ -1673,6 +1673,15 @@ async function renderSpotifyTab() {
         addVerboseLog(`Spotify runtime check failed: ${e}`);
     }
     const ready = info.python_installed && info.spotdl_installed;
+    let spSettings = { AudioProvider: 'piped', UseAuthCookies: false, UseProxy: false };
+    let authCookiesPath = '';
+    let networkProxy = '';
+    try {
+        const all = await App.GetSettings();
+        spSettings = all.Spotify || spSettings;
+        authCookiesPath = all.Auth?.CookiesFile || '';
+        networkProxy   = all.Network?.Proxy || '';
+    } catch (_) { /* keep defaults */ }
 
     content.innerHTML = `
         <div class="max-w-4xl mx-auto space-y-6">
@@ -1722,6 +1731,40 @@ async function renderSpotifyTab() {
                     <pre id="spotify-log" class="text-xs text-gray-400 max-h-48 overflow-auto bg-black/30 p-2 rounded"></pre>
                 </div>
 
+                <div class="card">
+                    <details>
+                        <summary class="cursor-pointer text-sm text-gray-300 select-none">⚙️ Advanced (workarounds for YouTube blocks)</summary>
+                        <div class="mt-4 space-y-3">
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Audio Provider</label>
+                                <select id="spotify-audio-provider" class="select-field w-full" onchange="window.saveSpotifyAdvanced()">
+                                    <option value="piped" ${spSettings.AudioProvider === 'piped' ? 'selected' : ''}>Piped (recommended, avoids YT Music blocks)</option>
+                                    <option value="youtube-music" ${spSettings.AudioProvider === 'youtube-music' ? 'selected' : ''}>YouTube Music (spotdl default — often blocked)</option>
+                                    <option value="youtube" ${spSettings.AudioProvider === 'youtube' ? 'selected' : ''}>YouTube</option>
+                                    <option value="soundcloud" ${spSettings.AudioProvider === 'soundcloud' ? 'selected' : ''}>SoundCloud</option>
+                                    <option value="bandcamp" ${spSettings.AudioProvider === 'bandcamp' ? 'selected' : ''}>Bandcamp</option>
+                                    <option value="slider-kz" ${spSettings.AudioProvider === 'slider-kz' ? 'selected' : ''}>Slider.kz</option>
+                                </select>
+                                <p class="text-xs text-gray-500 mt-1">Switch providers if you hit "blocked by YouTube Music" or 403 errors.</p>
+                            </div>
+                            <label class="flex items-start gap-2 text-sm cursor-pointer">
+                                <input type="checkbox" id="spotify-use-cookies" ${spSettings.UseAuthCookies ? 'checked' : ''} onchange="window.saveSpotifyAdvanced()">
+                                <span>
+                                    Use the cookies.txt configured under Settings → Auth.
+                                    <span class="block text-xs text-gray-500">${authCookiesPath ? 'Currently: ' + escapeHtml(authCookiesPath) : 'Auth.CookiesFile is empty. Set it in the main Settings tab first.'}</span>
+                                </span>
+                            </label>
+                            <label class="flex items-start gap-2 text-sm cursor-pointer">
+                                <input type="checkbox" id="spotify-use-proxy" ${spSettings.UseProxy ? 'checked' : ''} onchange="window.saveSpotifyAdvanced()">
+                                <span>
+                                    Use the HTTP proxy configured under Settings → Network.
+                                    <span class="block text-xs text-gray-500">${networkProxy ? 'Currently: ' + escapeHtml(networkProxy) : 'Network.Proxy is empty. Set it in the main Settings tab first.'}</span>
+                                </span>
+                            </label>
+                        </div>
+                    </details>
+                </div>
+
                 <div class="text-xs text-gray-500">
                     Python: ${escapeHtml(info.python_version || 'unknown')} · spotdl: ${escapeHtml(info.spotdl_version || 'unknown')}
                 </div>
@@ -1729,6 +1772,22 @@ async function renderSpotifyTab() {
         </div>
     `;
 }
+
+window.saveSpotifyAdvanced = async function() {
+    const provider = document.getElementById('spotify-audio-provider')?.value || 'piped';
+    const useCookies = !!document.getElementById('spotify-use-cookies')?.checked;
+    const useProxy   = !!document.getElementById('spotify-use-proxy')?.checked;
+    try {
+        const all = await App.GetSettings();
+        all.Spotify = all.Spotify || {};
+        all.Spotify.AudioProvider = provider;
+        all.Spotify.UseAuthCookies = useCookies;
+        all.Spotify.UseProxy = useProxy;
+        await App.SaveSettings(all);
+    } catch (e) {
+        addVerboseLog(`Saving Spotify advanced settings failed: ${e}`);
+    }
+};
 
 window.installSpotifyRuntime = async function() {
     const log = document.getElementById('spotify-install-log');

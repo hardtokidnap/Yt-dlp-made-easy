@@ -32,6 +32,17 @@ type Options struct {
 	Bitrate      string   `json:"bitrate"`
 	Threads      int      `json:"threads"`
 	FFmpegPath   string   `json:"ffmpeg_path"`
+	// AudioProvider lets us route around YouTube Music blocks. Accepted by
+	// spotdl --audio: "youtube-music" (default), "youtube", "piped",
+	// "soundcloud", "bandcamp", "slider-kz". Empty = spotdl default.
+	AudioProvider string `json:"audio_provider"`
+	// CookieFile is a yt-dlp cookies.txt path. Forwarded to spotdl via
+	// --cookie-file. Reuses the same Auth.CookiesFile the main downloader
+	// uses; spotdl consumes it independently.
+	CookieFile string `json:"cookie_file"`
+	// Proxy is an HTTP/HTTPS proxy URL. Forwarded to spotdl via --proxy.
+	// Reuses Network.Proxy from the main settings.
+	Proxy string `json:"proxy"`
 }
 
 // Job represents an in-flight spotdl download.
@@ -48,9 +59,18 @@ type Job struct {
 	cancel    context.CancelFunc
 }
 
+// PreviewOptions controls how PreviewURL contacts external services. Same
+// audio-provider / cookie / proxy knobs as a Download job, since spotdl runs
+// the same ytmusic-connection probe during 'save' as it does during 'download'.
+type PreviewOptions struct {
+	AudioProvider string
+	CookieFile    string
+	Proxy         string
+}
+
 // PreviewURL runs `spotdl save` on the given URL and returns the resolved tracks
 // without downloading audio. Used to populate a track-picker UI.
-func PreviewURL(ctx context.Context, url string) ([]Track, error) {
+func PreviewURL(ctx context.Context, url string, prevOpts PreviewOptions) ([]Track, error) {
 	tmpFile, err := os.CreateTemp("", "spotdl-preview-*.json")
 	if err != nil {
 		return nil, err
@@ -59,7 +79,17 @@ func PreviewURL(ctx context.Context, url string) ([]Track, error) {
 	tmpFile.Close()
 	defer os.Remove(tmpPath)
 
-	cmd := hiddenCmd(util.PythonExe, "-m", "spotdl", "save", url, "--save-file", tmpPath)
+	args := []string{"-m", "spotdl", "save", url, "--save-file", tmpPath}
+	if prevOpts.AudioProvider != "" {
+		args = append(args, "--audio", prevOpts.AudioProvider)
+	}
+	if prevOpts.CookieFile != "" {
+		args = append(args, "--cookie-file", prevOpts.CookieFile)
+	}
+	if prevOpts.Proxy != "" {
+		args = append(args, "--proxy", prevOpts.Proxy)
+	}
+	cmd := hiddenCmd(util.PythonExe, args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("spotdl save failed: %v: %s", err, string(out))
 	}
@@ -143,6 +173,15 @@ func Download(ctx context.Context, opts Options, progress func(*Job)) (*Job, err
 	}
 	if opts.FFmpegPath != "" {
 		args = append(args, "--ffmpeg", opts.FFmpegPath)
+	}
+	if opts.AudioProvider != "" {
+		args = append(args, "--audio", opts.AudioProvider)
+	}
+	if opts.CookieFile != "" {
+		args = append(args, "--cookie-file", opts.CookieFile)
+	}
+	if opts.Proxy != "" {
+		args = append(args, "--proxy", opts.Proxy)
 	}
 
 	cmd := hiddenCmdCtx(ctx, util.PythonExe, args...)

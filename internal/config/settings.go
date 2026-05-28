@@ -63,12 +63,16 @@ type AdvancedSettings struct {
 
 // SpotifySettings holds preferences for the Spotify (spotdl) subsystem.
 // Lives in its own block since the Spotify subsystem is fully isolated from
-// the main yt-dlp downloader (no shared queue, history, cookies, or binary).
+// the main yt-dlp downloader. It reads Auth.CookiesFile and Network.Proxy
+// when sending those to spotdl, but does not share queue/history/yt-dlp binary.
 type SpotifySettings struct {
-	OutputFolder string `json:"OutputFolder"`
-	Format       string `json:"Format"`  // "mp3" | "m4a" | "flac" | "opus" | "ogg" | "wav"
-	Bitrate      string `json:"Bitrate"` // "auto" | "192k" | "256k" | "320k" | "best"
-	Threads      int    `json:"Threads"`
+	OutputFolder  string `json:"OutputFolder"`
+	Format        string `json:"Format"`         // "mp3" | "m4a" | "flac" | "opus" | "ogg" | "wav"
+	Bitrate       string `json:"Bitrate"`        // "auto" | "192k" | "256k" | "320k" | "best"
+	Threads       int    `json:"Threads"`
+	AudioProvider string `json:"AudioProvider"` // "piped" (default) | "youtube-music" | "youtube" | "soundcloud" | "bandcamp" | "slider-kz"
+	UseAuthCookies bool  `json:"UseAuthCookies"` // when true, spotdl receives Auth.CookiesFile
+	UseProxy       bool  `json:"UseProxy"`       // when true, spotdl receives Network.Proxy
 }
 
 // DefaultSettings returns a new Settings instance with default values
@@ -111,10 +115,14 @@ func DefaultSettings() *Settings {
 			JSRuntime:      "auto", // auto-detect, or deno/node/bun
 		},
 		Spotify: SpotifySettings{
-			OutputFolder: util.DefaultSpotifyFolder,
-			Format:       "mp3",
-			Bitrate:      "auto",
-			Threads:      4,
+			OutputFolder:  util.DefaultSpotifyFolder,
+			Format:        "mp3",
+			Bitrate:       "auto",
+			Threads:       4,
+			// Piped avoids the YouTube Music block spotdl hits by default.
+			AudioProvider: "piped",
+			UseAuthCookies: false,
+			UseProxy:       false,
 		},
 	}
 }
@@ -209,6 +217,9 @@ func (s *Settings) mergeDefaults() {
 	}
 	if s.Spotify.Threads == 0 {
 		s.Spotify.Threads = defaults.Spotify.Threads
+	}
+	if s.Spotify.AudioProvider == "" {
+		s.Spotify.AudioProvider = defaults.Spotify.AudioProvider
 	}
 }
 

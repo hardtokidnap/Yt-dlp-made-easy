@@ -109,13 +109,13 @@ func patchPthFile(path string) error {
 func pipInstalled() bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	return exec.CommandContext(ctx, util.PythonExe, "-m", "pip", "--version").Run() == nil
+	return hiddenCmdCtx(ctx, util.PythonExe, "-m", "pip", "--version").Run() == nil
 }
 
 func spotdlInstalledCheck() bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	return exec.CommandContext(ctx, util.PythonExe, "-m", "spotdl", "--version").Run() == nil
+	return hiddenCmdCtx(ctx, util.PythonExe, "-m", "spotdl", "--version").Run() == nil
 }
 
 // downloadFile streams URL to dest path with .tmp + rename for AV-safe writes.
