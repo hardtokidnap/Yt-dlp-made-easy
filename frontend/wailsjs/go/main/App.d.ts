@@ -7,6 +7,7 @@ import {history} from '../models';
 import {jsruntime} from '../models';
 import {downloader} from '../models';
 import {config} from '../models';
+import {spotify} from '../models';
 
 export function AddDownload(arg1:string,arg2:main.DownloadOptions):Promise<string>;
 
@@ -22,6 +23,8 @@ export function CancelBatchConversion():Promise<void>;
 
 export function CancelConversion():Promise<void>;
 
+export function CancelSpotifyDownload():Promise<void>;
+
 export function CheckForUpdates():Promise<updater.UpdateInfo>;
 
 export function ClearCompletedDownloads():Promise<number>;
@@ -33,6 +36,10 @@ export function ClearOldHistory(arg1:number):Promise<number>;
 export function DownloadDeno():Promise<void>;
 
 export function DownloadFFmpeg():Promise<void>;
+
+export function DownloadSpotifyTracks(arg1:Array<string>):Promise<string>;
+
+export function EstimateConversionSize(arg1:converter.ConversionOptions):Promise<converter.SizeEstimate>;
 
 export function ExportHistory():Promise<string>;
 
@@ -58,9 +65,13 @@ export function GetRecentHistory(arg1:number):Promise<Array<history.Entry>>;
 
 export function GetSettings():Promise<config.Settings>;
 
+export function GetSpotifyRuntimeInfo():Promise<spotify.RuntimeInfo>;
+
 export function GetYtDlpVersion():Promise<string>;
 
 export function HideFromQueue(arg1:string):Promise<void>;
+
+export function InstallSpotifyRuntime():Promise<void>;
 
 export function IsFFmpegInstalled():Promise<boolean>;
 
@@ -75,6 +86,8 @@ export function OpenURL(arg1:string):Promise<void>;
 export function PauseAllDownloads():Promise<number>;
 
 export function PauseDownload(arg1:string):Promise<void>;
+
+export function PreviewSpotifyURL(arg1:string):Promise<Array<spotify.Track>>;
 
 export function ProbeFile(arg1:string):Promise<converter.MediaInfo>;
 

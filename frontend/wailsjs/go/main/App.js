@@ -30,6 +30,10 @@ export function CancelConversion() {
   return window['go']['main']['App']['CancelConversion']();
 }
 
+export function CancelSpotifyDownload() {
+  return window['go']['main']['App']['CancelSpotifyDownload']();
+}
+
 export function CheckForUpdates() {
   return window['go']['main']['App']['CheckForUpdates']();
 }
@@ -52,6 +56,14 @@ export function DownloadDeno() {
 
 export function DownloadFFmpeg() {
   return window['go']['main']['App']['DownloadFFmpeg']();
+}
+
+export function DownloadSpotifyTracks(arg1) {
+  return window['go']['main']['App']['DownloadSpotifyTracks'](arg1);
+}
+
+export function EstimateConversionSize(arg1) {
+  return window['go']['main']['App']['EstimateConversionSize'](arg1);
 }
 
 export function ExportHistory() {
@@ -102,12 +114,20 @@ export function GetSettings() {
   return window['go']['main']['App']['GetSettings']();
 }
 
+export function GetSpotifyRuntimeInfo() {
+  return window['go']['main']['App']['GetSpotifyRuntimeInfo']();
+}
+
 export function GetYtDlpVersion() {
   return window['go']['main']['App']['GetYtDlpVersion']();
 }
 
 export function HideFromQueue(arg1) {
   return window['go']['main']['App']['HideFromQueue'](arg1);
+}
+
+export function InstallSpotifyRuntime() {
+  return window['go']['main']['App']['InstallSpotifyRuntime']();
 }
 
 export function IsFFmpegInstalled() {
@@ -136,6 +156,10 @@ export function PauseAllDownloads() {
 
 export function PauseDownload(arg1) {
   return window['go']['main']['App']['PauseDownload'](arg1);
+}
+
+export function PreviewSpotifyURL(arg1) {
+  return window['go']['main']['App']['PreviewSpotifyURL'](arg1);
 }
 
 export function ProbeFile(arg1) {

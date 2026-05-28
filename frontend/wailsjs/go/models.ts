@@ -102,6 +102,24 @@ export namespace config {
 	        this.Retries = source["Retries"];
 	    }
 	}
+	export class SpotifySettings {
+	    OutputFolder: string;
+	    Format: string;
+	    Bitrate: string;
+	    Threads: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new SpotifySettings(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.OutputFolder = source["OutputFolder"];
+	        this.Format = source["Format"];
+	        this.Bitrate = source["Bitrate"];
+	        this.Threads = source["Threads"];
+	    }
+	}
 	export class Settings {
 	    SchemaVersion: number;
 	    General: GeneralSettings;
@@ -109,6 +127,7 @@ export namespace config {
 	    Network: NetworkSettings;
 	    Auth: AuthSettings;
 	    Advanced: AdvancedSettings;
+	    Spotify: SpotifySettings;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -122,6 +141,7 @@ export namespace config {
 	        this.Network = this.convertValues(source["Network"], NetworkSettings);
 	        this.Auth = this.convertValues(source["Auth"], AuthSettings);
 	        this.Advanced = this.convertValues(source["Advanced"], AdvancedSettings);
+	        this.Spotify = this.convertValues(source["Spotify"], SpotifySettings);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -211,6 +231,7 @@ export namespace converter {
 	    start_time: string;
 	    end_time: string;
 	    custom_args: string;
+	    quality_tier: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ConversionOptions(source);
@@ -231,6 +252,7 @@ export namespace converter {
 	        this.start_time = source["start_time"];
 	        this.end_time = source["end_time"];
 	        this.custom_args = source["custom_args"];
+	        this.quality_tier = source["quality_tier"];
 	    }
 	}
 	export class MediaInfo {
@@ -238,9 +260,11 @@ export namespace converter {
 	    duration_sec: number;
 	    width: number;
 	    height: number;
+	    fps: number;
 	    video_codec: string;
 	    audio_codec: string;
 	    bitrate: string;
+	    audio_bitrate: string;
 	    file_size: string;
 	    has_video: boolean;
 	    has_audio: boolean;
@@ -255,9 +279,11 @@ export namespace converter {
 	        this.duration_sec = source["duration_sec"];
 	        this.width = source["width"];
 	        this.height = source["height"];
+	        this.fps = source["fps"];
 	        this.video_codec = source["video_codec"];
 	        this.audio_codec = source["audio_codec"];
 	        this.bitrate = source["bitrate"];
+	        this.audio_bitrate = source["audio_bitrate"];
 	        this.file_size = source["file_size"];
 	        this.has_video = source["has_video"];
 	        this.has_audio = source["has_audio"];
@@ -297,6 +323,22 @@ export namespace converter {
 	        this.resolution = source["resolution"];
 	        this.extra_args = source["extra_args"];
 	        this.is_platform = source["is_platform"];
+	    }
+	}
+	export class SizeEstimate {
+	    bytes: number;
+	    confidence: string;
+	    note: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SizeEstimate(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.bytes = source["bytes"];
+	        this.confidence = source["confidence"];
+	        this.note = source["note"];
 	    }
 	}
 
@@ -539,6 +581,51 @@ export namespace main {
 	        this.is_audio_only = source["is_audio_only"];
 	        this.quality = source["quality"];
 	        this.format = source["format"];
+	    }
+	}
+
+}
+
+export namespace spotify {
+	
+	export class RuntimeInfo {
+	    python_installed: boolean;
+	    python_version: string;
+	    python_path: string;
+	    spotdl_installed: boolean;
+	    spotdl_version: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RuntimeInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.python_installed = source["python_installed"];
+	        this.python_version = source["python_version"];
+	        this.python_path = source["python_path"];
+	        this.spotdl_installed = source["spotdl_installed"];
+	        this.spotdl_version = source["spotdl_version"];
+	    }
+	}
+	export class Track {
+	    url: string;
+	    title: string;
+	    artist: string;
+	    album: string;
+	    duration_sec: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Track(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.url = source["url"];
+	        this.title = source["title"];
+	        this.artist = source["artist"];
+	        this.album = source["album"];
+	        this.duration_sec = source["duration_sec"];
 	    }
 	}
 
