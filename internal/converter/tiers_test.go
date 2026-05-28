@@ -65,6 +65,36 @@ func TestApplyQualityTier_CustomTierIsNoOp(t *testing.T) {
 	}
 }
 
+func TestBuildArgs_LosslessLibX264_EmitsLosslessFlag(t *testing.T) {
+	opts := ConversionOptions{
+		InputFile:    "x.mkv",
+		OutputFormat: "mp4",
+		VideoCodec:   "libx264",
+		QualityTier:  "lossless",
+	}
+	args := BuildArgs(opts)
+	joined := strings.Join(args, " ")
+	// Either -qp 0 or -crf 0 must appear; the gate on opts.CRF > 0 must not
+	// silently drop the lossless instruction.
+	if !strings.Contains(joined, "-qp 0") && !strings.Contains(joined, "-crf 0") {
+		t.Errorf("libx264 lossless must emit -qp 0 or -crf 0, got: %s", joined)
+	}
+}
+
+func TestBuildArgs_LosslessVP9_EmitsLosslessFlag(t *testing.T) {
+	opts := ConversionOptions{
+		InputFile:    "x.mkv",
+		OutputFormat: "webm",
+		VideoCodec:   "libvpx-vp9",
+		QualityTier:  "lossless",
+	}
+	args := BuildArgs(opts)
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "-lossless 1") {
+		t.Errorf("libvpx-vp9 lossless must emit -lossless 1, got: %s", joined)
+	}
+}
+
 func TestBuildArgs_AppliesTier(t *testing.T) {
 	opts := ConversionOptions{
 		InputFile:    "input.mkv",

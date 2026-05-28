@@ -88,15 +88,21 @@ func applyQualityTier(opts *ConversionOptions) []string {
 			opts.AudioBitrate = ""
 			return warnings
 		}
+		// Route lossless flags through CustomArgs so they survive BuildArgs'
+		// CRF > 0 gate. opts.CRF is left at 0 (= "not set") to avoid emitting
+		// a default -crf 0 that would override these explicit flags.
 		switch opts.VideoCodec {
 		case "libx264", "":
 			opts.VideoCodec = "libx264"
-			opts.CRF = 0
 			opts.Preset = "veryslow"
+			if !strings.Contains(opts.CustomArgs, "-qp ") && !strings.Contains(opts.CustomArgs, "-crf ") {
+				opts.CustomArgs = strings.TrimSpace(opts.CustomArgs + " -qp 0")
+			}
 		case "libx265":
-			opts.CRF = 0
+			if !strings.Contains(opts.CustomArgs, "lossless") {
+				opts.CustomArgs = strings.TrimSpace(opts.CustomArgs + " -x265-params lossless=1")
+			}
 		case "libvpx-vp9":
-			opts.CRF = 0
 			if !strings.Contains(opts.CustomArgs, "-lossless") {
 				opts.CustomArgs = strings.TrimSpace(opts.CustomArgs + " -lossless 1")
 			}

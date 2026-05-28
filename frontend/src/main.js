@@ -1173,6 +1173,18 @@ window.onQualityTierChange = function(tier) {
         '':         'Tier off: bitrate / preset settings above apply directly.',
     };
     if (hint) hint.textContent = hints[tier] || '';
+
+    // Show the manual CRF slider only in Custom mode. In every other mode the
+    // backend tier table populates CRF, so the slider would just mislead.
+    const slider = document.getElementById('quality-slider-section');
+    if (slider) {
+        if (tier === 'custom' || tier === '') {
+            slider.classList.remove('hidden');
+        } else {
+            slider.classList.add('hidden');
+        }
+    }
+    if (typeof window.updateSizeEstimate === 'function') window.updateSizeEstimate();
 };
 
 window.onCrfSliderChange = function(val) {
