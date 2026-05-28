@@ -20,7 +20,6 @@ const state = {
 const tabs = [
     {id: 'download', label: 'Download', icon: '⬇️'},
     {id: 'convert', label: 'Convert', icon: '🔄'},
-    {id: 'spotify', label: 'Spotify', icon: '🎵'},
     {id: 'history', label: 'History', icon: '📜'},
     {id: 'settings', label: 'Settings', icon: '⚙️'},
     {id: 'log', label: 'Log', icon: '📋'}
@@ -84,7 +83,6 @@ window.switchTab = function(tabId) {
     const contentMap = {
         'download': renderDownloadTab,
         'convert': renderConvertTab,
-        'spotify': renderSpotifyTab,
         'history': renderHistoryTab,
         'settings': renderSettingsTab,
         'log': renderLogTab
@@ -103,13 +101,56 @@ function renderDownloadTab() {
                 <h2 class="text-xl font-semibold mb-4">Add Download</h2>
                 <div class="space-y-4">
                     <div>
-                        <label class="block text-sm font-medium mb-2">Video URL</label>
+                        <label class="block text-sm font-medium mb-2">Video / Spotify URL</label>
                         <textarea
                             id="url-input"
                             rows="3"
                             class="input-field resize-none"
-                            placeholder="https://www.youtube.com/watch?v=..."
+                            placeholder="https://www.youtube.com/watch?v=...  or  https://open.spotify.com/track/..."
+                            oninput="window.onUrlInputChange()"
                         ></textarea>
+                        <p id="url-source-hint" class="text-xs text-gray-500 mt-1 hidden"></p>
+                    </div>
+
+                    <!-- Inline Spotify picker (hidden by default; appears when a Spotify URL is pasted and previewed) -->
+                    <div id="spotify-inline" class="hidden border-t border-gray-700 pt-4 space-y-3">
+                        <div id="spotify-install-card" class="hidden p-3 rounded bg-yellow-900/20 border border-yellow-700">
+                            <p class="text-sm text-gray-200 mb-2">Spotify runtime not installed (~80 MB, fetched once into the app data folder; system Python is untouched).</p>
+                            <button id="spotify-install-btn" class="btn-primary text-sm" onclick="window.installSpotifyRuntime()">Install Spotify runtime</button>
+                            <pre id="spotify-install-log" class="mt-2 text-xs text-gray-400 max-h-32 overflow-auto hidden"></pre>
+                        </div>
+                        <div id="spotify-actions" class="hidden flex gap-2">
+                            <button class="btn-secondary text-sm" onclick="window.previewSpotify()">Preview Tracks</button>
+                            <button id="spotify-download-btn" class="btn-primary text-sm hidden" onclick="window.startSpotifyDownload()">Download Selected</button>
+                        </div>
+                        <div id="spotify-preview"></div>
+                        <details>
+                            <summary class="cursor-pointer text-xs text-gray-400 select-none">⚙️ Advanced (workarounds for YouTube blocks)</summary>
+                            <div class="mt-2 space-y-2 text-sm">
+                                <div>
+                                    <label class="block mb-1">Audio Provider</label>
+                                    <select id="spotify-audio-provider" class="select-field w-full" onchange="window.saveSpotifyAdvanced()"></select>
+                                </div>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" id="spotify-use-cookies" onchange="window.saveSpotifyAdvanced()">
+                                    <span>Use the cookies.txt configured under Settings → Auth. <span id="spotify-cookies-path" class="block text-xs text-gray-500"></span></span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" id="spotify-use-proxy" onchange="window.saveSpotifyAdvanced()">
+                                    <span>Use the HTTP proxy configured under Settings → Network. <span id="spotify-proxy-url" class="block text-xs text-gray-500"></span></span>
+                                </label>
+                            </div>
+                        </details>
+                        <div id="spotify-progress-card" class="hidden">
+                            <div class="flex justify-between items-center mb-1">
+                                <span id="spotify-progress-status" class="text-sm text-gray-300">Starting...</span>
+                                <div class="flex items-center gap-3">
+                                    <span id="spotify-progress-count" class="text-sm text-gray-400"></span>
+                                    <button onclick="window.cancelSpotifyDownload()" class="btn-danger text-sm">Cancel</button>
+                                </div>
+                            </div>
+                            <pre id="spotify-log" class="text-xs text-gray-400 max-h-32 overflow-auto bg-black/30 p-2 rounded"></pre>
+                        </div>
                     </div>
 
                     <div class="grid grid-cols-2 gap-4">
@@ -180,6 +221,16 @@ window.startDownload = async function() {
     const url = document.getElementById('url-input').value.trim();
     if (!url) {
         alert('Please enter a URL');
+        return;
+    }
+
+    // Spotify URLs use spotdl, which needs a preview→pick step. The inline
+    // panel handles that flow; nudge the user there instead of trying to send
+    // a Spotify URL through yt-dlp.
+    if (isSpotifyUrl(url)) {
+        const previewBtn = document.querySelector('#spotify-actions button.btn-secondary');
+        if (previewBtn) previewBtn.click();
+        else alert('This is a Spotify URL — use the Preview / Download Selected buttons in the Spotify panel above.');
         return;
     }
 
@@ -1661,18 +1712,56 @@ window.openConvertOutput = function() {
     }
 };
 
-// Spotify Tab
-// Isolated subsystem: own portable Python runtime, own progress UI. Does not
-// touch the main download queue / history.
-async function renderSpotifyTab() {
-    const content = document.getElementById('tab-content');
-    let info = { python_installed: false, spotdl_installed: false };
-    try {
-        info = await App.GetSpotifyRuntimeInfo();
-    } catch (e) {
-        addVerboseLog(`Spotify runtime check failed: ${e}`);
+// Spotify inline panel lives inside the Download tab. The functions below run
+// when the user pastes a Spotify URL. Subsystem remains isolated server-side;
+// only the UI surface is merged with regular yt-dlp downloads.
+
+const SPOTIFY_URL_RE = /https?:\/\/(open|play)\.spotify\.com\//i;
+
+function isSpotifyUrl(u) {
+    if (!u) return false;
+    return SPOTIFY_URL_RE.test(u.trim().split(/\s+/)[0]);
+}
+
+// Toggle the inline Spotify panel when a Spotify URL appears in the textarea.
+// First reveal lazily initializes the panel (runtime check, settings hydration).
+let _spotifyInlineInit = false;
+window.onUrlInputChange = async function() {
+    const url   = document.getElementById('url-input')?.value || '';
+    const panel = document.getElementById('spotify-inline');
+    const hint  = document.getElementById('url-source-hint');
+    if (!panel || !hint) return;
+
+    if (isSpotifyUrl(url)) {
+        panel.classList.remove('hidden');
+        hint.classList.remove('hidden');
+        hint.textContent = 'Detected Spotify URL — uses spotdl + the bundled Python runtime.';
+        if (!_spotifyInlineInit) {
+            _spotifyInlineInit = true;
+            await initSpotifyInline();
+        }
+    } else {
+        panel.classList.add('hidden');
+        if (url) {
+            hint.classList.remove('hidden');
+            hint.textContent = 'Will download via yt-dlp.';
+        } else {
+            hint.classList.add('hidden');
+        }
     }
+};
+
+async function initSpotifyInline() {
+    let info = { python_installed: false, spotdl_installed: false };
+    try { info = await App.GetSpotifyRuntimeInfo(); } catch (_) { /* default to not-ready */ }
     const ready = info.python_installed && info.spotdl_installed;
+
+    const installCard = document.getElementById('spotify-install-card');
+    const actions     = document.getElementById('spotify-actions');
+    if (installCard) installCard.classList.toggle('hidden', ready);
+    if (actions)     actions.classList.toggle('hidden', !ready);
+
+    // Hydrate the Advanced section
     let spSettings = { AudioProvider: 'piped', UseAuthCookies: false, UseProxy: false };
     let authCookiesPath = '';
     let networkProxy = '';
@@ -1683,94 +1772,26 @@ async function renderSpotifyTab() {
         networkProxy   = all.Network?.Proxy || '';
     } catch (_) { /* keep defaults */ }
 
-    content.innerHTML = `
-        <div class="max-w-4xl mx-auto space-y-6">
-            ${!ready ? `
-                <div class="card border border-yellow-700 bg-yellow-900/20">
-                    <h3 class="text-lg font-semibold mb-2">🎵 Spotify runtime not installed</h3>
-                    <p class="text-sm text-gray-300 mb-3">
-                        Spotify downloads require a portable Python runtime and the
-                        <code class="text-xs">spotdl</code> tool. First install is roughly
-                        80 MB, fetched into the app data folder. Your system Python is
-                        not touched.
-                    </p>
-                    <button id="spotify-install-btn" class="btn-primary" onclick="window.installSpotifyRuntime()">
-                        Install Spotify runtime
-                    </button>
-                    <pre id="spotify-install-log" class="mt-3 text-xs text-gray-400 max-h-40 overflow-auto hidden"></pre>
-                </div>
-            ` : `
-                <div class="card">
-                    <h2 class="text-xl font-semibold mb-4">Download from Spotify</h2>
-                    <div class="space-y-3">
-                        <div>
-                            <label class="block text-sm font-medium mb-2">Spotify URL</label>
-                            <div class="flex gap-2">
-                                <input id="spotify-url" class="input-field flex-1" placeholder="https://open.spotify.com/track/... or playlist/album URL" />
-                                <button class="btn-secondary" onclick="window.previewSpotify()">Preview</button>
-                            </div>
-                            <p class="text-xs text-gray-500 mt-1">
-                                Audio is fetched from YouTube via spotdl. Same ban surface as the Download tab. Use a throwaway account when in doubt.
-                            </p>
-                        </div>
-                        <div id="spotify-preview" class="hidden"></div>
-                        <button id="spotify-download-btn" class="btn-primary hidden" onclick="window.startSpotifyDownload()">
-                            Download Selected
-                        </button>
-                    </div>
-                </div>
-
-                <div id="spotify-progress-card" class="card hidden">
-                    <div class="flex justify-between items-center mb-2">
-                        <span id="spotify-progress-status" class="text-sm text-gray-300">Starting...</span>
-                        <div class="flex items-center gap-3">
-                            <span id="spotify-progress-count" class="text-sm text-gray-400"></span>
-                            <button onclick="window.cancelSpotifyDownload()" class="btn-danger text-sm">Cancel</button>
-                        </div>
-                    </div>
-                    <pre id="spotify-log" class="text-xs text-gray-400 max-h-48 overflow-auto bg-black/30 p-2 rounded"></pre>
-                </div>
-
-                <div class="card">
-                    <details>
-                        <summary class="cursor-pointer text-sm text-gray-300 select-none">⚙️ Advanced (workarounds for YouTube blocks)</summary>
-                        <div class="mt-4 space-y-3">
-                            <div>
-                                <label class="block text-sm font-medium mb-1">Audio Provider</label>
-                                <select id="spotify-audio-provider" class="select-field w-full" onchange="window.saveSpotifyAdvanced()">
-                                    <option value="piped" ${spSettings.AudioProvider === 'piped' ? 'selected' : ''}>Piped (recommended, avoids YT Music blocks)</option>
-                                    <option value="youtube-music" ${spSettings.AudioProvider === 'youtube-music' ? 'selected' : ''}>YouTube Music (spotdl default — often blocked)</option>
-                                    <option value="youtube" ${spSettings.AudioProvider === 'youtube' ? 'selected' : ''}>YouTube</option>
-                                    <option value="soundcloud" ${spSettings.AudioProvider === 'soundcloud' ? 'selected' : ''}>SoundCloud</option>
-                                    <option value="bandcamp" ${spSettings.AudioProvider === 'bandcamp' ? 'selected' : ''}>Bandcamp</option>
-                                    <option value="slider-kz" ${spSettings.AudioProvider === 'slider-kz' ? 'selected' : ''}>Slider.kz</option>
-                                </select>
-                                <p class="text-xs text-gray-500 mt-1">Switch providers if you hit "blocked by YouTube Music" or 403 errors.</p>
-                            </div>
-                            <label class="flex items-start gap-2 text-sm cursor-pointer">
-                                <input type="checkbox" id="spotify-use-cookies" ${spSettings.UseAuthCookies ? 'checked' : ''} onchange="window.saveSpotifyAdvanced()">
-                                <span>
-                                    Use the cookies.txt configured under Settings → Auth.
-                                    <span class="block text-xs text-gray-500">${authCookiesPath ? 'Currently: ' + escapeHtml(authCookiesPath) : 'Auth.CookiesFile is empty. Set it in the main Settings tab first.'}</span>
-                                </span>
-                            </label>
-                            <label class="flex items-start gap-2 text-sm cursor-pointer">
-                                <input type="checkbox" id="spotify-use-proxy" ${spSettings.UseProxy ? 'checked' : ''} onchange="window.saveSpotifyAdvanced()">
-                                <span>
-                                    Use the HTTP proxy configured under Settings → Network.
-                                    <span class="block text-xs text-gray-500">${networkProxy ? 'Currently: ' + escapeHtml(networkProxy) : 'Network.Proxy is empty. Set it in the main Settings tab first.'}</span>
-                                </span>
-                            </label>
-                        </div>
-                    </details>
-                </div>
-
-                <div class="text-xs text-gray-500">
-                    Python: ${escapeHtml(info.python_version || 'unknown')} · spotdl: ${escapeHtml(info.spotdl_version || 'unknown')}
-                </div>
-            `}
-        </div>
-    `;
+    const sel = document.getElementById('spotify-audio-provider');
+    if (sel) {
+        const opts = [
+            ['piped',         'Piped (recommended, avoids YT Music blocks)'],
+            ['youtube-music', 'YouTube Music (spotdl default — often blocked)'],
+            ['youtube',       'YouTube'],
+            ['soundcloud',    'SoundCloud'],
+            ['bandcamp',      'Bandcamp'],
+            ['slider-kz',     'Slider.kz'],
+        ];
+        sel.innerHTML = opts.map(([v, l]) => `<option value="${v}" ${spSettings.AudioProvider === v ? 'selected' : ''}>${l}</option>`).join('');
+    }
+    const useCookies = document.getElementById('spotify-use-cookies');
+    if (useCookies) useCookies.checked = !!spSettings.UseAuthCookies;
+    const useProxy = document.getElementById('spotify-use-proxy');
+    if (useProxy) useProxy.checked = !!spSettings.UseProxy;
+    const cookiesPath = document.getElementById('spotify-cookies-path');
+    if (cookiesPath) cookiesPath.textContent = authCookiesPath ? 'Currently: ' + authCookiesPath : 'Auth.CookiesFile is empty. Set it under Settings → Auth first.';
+    const proxyUrl = document.getElementById('spotify-proxy-url');
+    if (proxyUrl) proxyUrl.textContent = networkProxy ? 'Currently: ' + networkProxy : 'Network.Proxy is empty. Set it under Settings → Network first.';
 }
 
 window.saveSpotifyAdvanced = async function() {
@@ -1796,8 +1817,10 @@ window.installSpotifyRuntime = async function() {
     if (log) log.classList.remove('hidden');
     try {
         await App.InstallSpotifyRuntime();
-        // Re-render the tab now that install is done.
-        if (state.currentTab === 'spotify') await renderSpotifyTab();
+        // Re-hydrate the inline panel so the install card disappears and the
+        // Preview / Download buttons appear without a tab reload.
+        _spotifyInlineInit = false;
+        await initSpotifyInline();
     } catch (e) {
         if (log) log.textContent += '\nERROR: ' + (e?.message || e);
         if (btn) btn.disabled = false;
@@ -1805,7 +1828,7 @@ window.installSpotifyRuntime = async function() {
 };
 
 window.previewSpotify = async function() {
-    const url = document.getElementById('spotify-url')?.value?.trim();
+    const url = document.getElementById('url-input')?.value?.trim();
     if (!url) return;
     const previewBox = document.getElementById('spotify-preview');
     previewBox.classList.remove('hidden');

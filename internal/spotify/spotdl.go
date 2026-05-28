@@ -12,8 +12,29 @@ import (
 	"sync"
 	"time"
 
+	"ytdlp-easy/internal/jsruntime"
 	"ytdlp-easy/internal/util"
 )
+
+// envWithBundledDeno returns a copy of os.Environ() with the directory holding
+// the app's bundled deno.exe prepended to PATH, so spotdl's transitive yt-dlp
+// finds the same Deno the main downloader uses instead of failing on JS
+// challenges (e.g. "made for kids" videos).
+func envWithBundledDeno() []string {
+	deno := jsruntime.BundledDenoPath()
+	if _, err := os.Stat(deno); err != nil {
+		return os.Environ()
+	}
+	dir := filepath.Dir(deno)
+	env := os.Environ()
+	for i, kv := range env {
+		if strings.HasPrefix(strings.ToUpper(kv), "PATH=") {
+			env[i] = "PATH=" + dir + string(os.PathListSeparator) + kv[len("PATH="):]
+			return env
+		}
+	}
+	return append(env, "PATH="+dir)
+}
 
 // Track is one Spotify track resolved by spotdl.
 type Track struct {
@@ -90,6 +111,7 @@ func PreviewURL(ctx context.Context, url string, prevOpts PreviewOptions) ([]Tra
 		args = append(args, "--proxy", prevOpts.Proxy)
 	}
 	cmd := hiddenCmd(util.PythonExe, args...)
+	cmd.Env = envWithBundledDeno()
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("spotdl save failed: %v: %s", err, string(out))
 	}
@@ -185,6 +207,7 @@ func Download(ctx context.Context, opts Options, progress func(*Job)) (*Job, err
 	}
 
 	cmd := hiddenCmdCtx(ctx, util.PythonExe, args...)
+	cmd.Env = envWithBundledDeno()
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		job.Status = "failed"
