@@ -930,6 +930,7 @@ async function renderConvertTab() {
 
             <!-- Convert Button & Progress -->
             <div class="card">
+                <div id="convert-size-estimate" class="text-sm text-gray-400 mb-3 text-right">Estimated output size: -</div>
                 <div id="convert-action" class="space-y-4">
                     <button id="convert-start-btn" onclick="window.startConversion()" class="btn-primary w-full py-3 text-lg">
                         🔄 Convert
@@ -955,8 +956,74 @@ async function renderConvertTab() {
     // Store presets in state for applyConvertPreset
     state.conversionPresets = presets;
 
+    // Wire live output size estimation to every option control.
+    attachSizeEstimateListeners();
+
     // Rehydrate UI if a conversion is already in progress
     syncConversionUI(state.conversion);
+}
+
+let _sizeEstimateTimer = null;
+
+// updateSizeEstimate calls EstimateConversionSize with the current option set
+// (debounced) and updates the inline hint. Probe failures fall back to a neutral
+// message rather than throwing.
+window.updateSizeEstimate = function() {
+    clearTimeout(_sizeEstimateTimer);
+    _sizeEstimateTimer = setTimeout(async function() {
+        const display = document.getElementById('convert-size-estimate');
+        if (!display) return;
+        const inputFile = document.getElementById('convert-input')?.value || '';
+        if (!inputFile) {
+            display.textContent = 'Estimated output size: -';
+            return;
+        }
+        const crfEl = document.getElementById('convert-crf');
+        const crfActive = crfEl?.dataset.active === 'true';
+        const crf = crfActive ? 32 - parseInt(crfEl.value, 10) : 0;
+        const opts = {
+            input_file:    inputFile,
+            output_format: document.getElementById('convert-format')?.value || '',
+            video_codec:   document.getElementById('convert-vcodec')?.value || '',
+            audio_codec:   document.getElementById('convert-acodec')?.value || '',
+            preset:        document.getElementById('convert-preset')?.value || '',
+            video_bitrate: document.getElementById('convert-vbitrate')?.value || '',
+            audio_bitrate: document.getElementById('convert-abitrate')?.value || '',
+            resolution:    document.getElementById('convert-resolution')?.value || '',
+            crf:           crf,
+            start_time:    document.getElementById('trim-start')?.value || '',
+            end_time:      document.getElementById('trim-end')?.value || '',
+            custom_args:   document.getElementById('convert-custom-args')?.value || '',
+            quality_tier:  document.getElementById('convert-quality-tier')?.value || '',
+        };
+        try {
+            const est = await App.EstimateConversionSize(opts);
+            if (est && est.note) {
+                display.textContent = 'Estimated output size: ' + est.note;
+            } else {
+                display.textContent = 'Estimated output size: -';
+            }
+        } catch (e) {
+            display.textContent = 'Estimated output size: (estimate failed)';
+        }
+    }, 250);
+};
+
+function attachSizeEstimateListeners() {
+    const ids = [
+        'convert-input', 'convert-format', 'convert-vcodec', 'convert-acodec',
+        'convert-preset', 'convert-vbitrate', 'convert-abitrate', 'convert-resolution',
+        'convert-crf', 'convert-quality-tier', 'convert-custom-args',
+        'trim-start', 'trim-end',
+    ];
+    ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const ev = (el.tagName === 'INPUT' && el.type !== 'range') ? 'input' : 'change';
+        el.addEventListener(ev, window.updateSizeEstimate);
+    });
+    // Initial estimate once the input field is filled later via probe.
+    window.updateSizeEstimate();
 }
 
 function syncConversionUI(job) {
@@ -1068,6 +1135,9 @@ async function probeAndShowInfo(filePath) {
         if (trimError) trimError.classList.add('hidden');
         const trimEnd = document.getElementById('trim-end');
         if (trimEnd && info.duration) trimEnd.placeholder = info.duration;
+
+        // New file probed -> recompute the output size hint.
+        if (typeof window.updateSizeEstimate === 'function') window.updateSizeEstimate();
     } catch (err) {
         if (myProbeId !== _probeId) return;
         panel.classList.add('hidden');
