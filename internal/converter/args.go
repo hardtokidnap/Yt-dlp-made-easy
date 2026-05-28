@@ -21,6 +21,127 @@ type ConversionOptions struct {
 	StartTime    string `json:"start_time"`
 	EndTime      string `json:"end_time"`
 	CustomArgs   string `json:"custom_args"`
+	// QualityTier selects a codec-aware quality preset. Values:
+	// "low" | "medium" | "high" | "lossless" | "custom" | "".
+	// Empty and "custom" are no-ops; the rest mutate CRF, Preset, AudioBitrate.
+	QualityTier string `json:"quality_tier"`
+}
+
+// qualityTierConfig holds the codec-specific values applied by a quality tier.
+type qualityTierConfig struct {
+	crf          int
+	preset       string
+	audioBitrate string
+}
+
+// tierTable[videoCodec][tier] -> per-codec values.
+// Audio-only conversions key off OutputFormat in applyQualityTier instead.
+var tierTable = map[string]map[string]qualityTierConfig{
+	"libx264": {
+		"low":    {crf: 28, preset: "fast", audioBitrate: "96k"},
+		"medium": {crf: 23, preset: "medium", audioBitrate: "192k"},
+		"high":   {crf: 18, preset: "slow", audioBitrate: "256k"},
+	},
+	"libx265": {
+		"low":    {crf: 30, preset: "fast", audioBitrate: "96k"},
+		"medium": {crf: 26, preset: "medium", audioBitrate: "192k"},
+		"high":   {crf: 22, preset: "slow", audioBitrate: "256k"},
+	},
+	"libvpx-vp9": {
+		"low":    {crf: 35, audioBitrate: "96k"},
+		"medium": {crf: 31, audioBitrate: "192k"},
+		"high":   {crf: 24, audioBitrate: "256k"},
+	},
+	"libaom-av1": {
+		"low":    {crf: 35, audioBitrate: "96k"},
+		"medium": {crf: 30, audioBitrate: "192k"},
+		"high":   {crf: 24, audioBitrate: "256k"},
+	},
+}
+
+// audioTierBitrate maps tier -> mp3-class bitrate for audio-only conversions.
+var audioTierBitrate = map[string]string{
+	"low":    "96k",
+	"medium": "192k",
+	"high":   "256k",
+}
+
+// applyQualityTier mutates opts to apply the selected tier in place. Returns
+// human-readable warnings the caller can surface in the UI. Tier "" or "custom"
+// is a no-op so the user can hand-set CRF/bitrate.
+func applyQualityTier(opts *ConversionOptions) []string {
+	tier := strings.ToLower(strings.TrimSpace(opts.QualityTier))
+	if tier == "" || tier == "custom" {
+		return nil
+	}
+
+	isAudioOnly := audioOnlyFormats[opts.OutputFormat]
+	var warnings []string
+
+	if tier == "lossless" {
+		if isAudioOnly {
+			if opts.OutputFormat != "flac" {
+				warnings = append(warnings, "Lossless tier overrides output format to FLAC for audio.")
+				opts.OutputFormat = "flac"
+			}
+			opts.AudioCodec = "flac"
+			opts.AudioBitrate = ""
+			return warnings
+		}
+		switch opts.VideoCodec {
+		case "libx264", "":
+			opts.VideoCodec = "libx264"
+			opts.CRF = 0
+			opts.Preset = "veryslow"
+		case "libx265":
+			opts.CRF = 0
+		case "libvpx-vp9":
+			opts.CRF = 0
+			if !strings.Contains(opts.CustomArgs, "-lossless") {
+				opts.CustomArgs = strings.TrimSpace(opts.CustomArgs + " -lossless 1")
+			}
+		case "libaom-av1":
+			warnings = append(warnings, "AV1 lossless is not supported by libaom-av1. Selected tier ignored.")
+		default:
+			warnings = append(warnings, "Lossless tier not supported for codec "+opts.VideoCodec+". Selected tier ignored.")
+		}
+		if opts.AudioCodec == "" || opts.AudioCodec == "aac" {
+			opts.AudioCodec = "flac"
+		}
+		return warnings
+	}
+
+	if isAudioOnly {
+		if br, ok := audioTierBitrate[tier]; ok {
+			opts.AudioBitrate = br
+		} else {
+			warnings = append(warnings, "Unknown quality tier: "+tier)
+		}
+		return warnings
+	}
+
+	codec := opts.VideoCodec
+	if codec == "" {
+		codec = "libx264"
+	}
+	codecConfigs, ok := tierTable[codec]
+	if !ok {
+		warnings = append(warnings, "Quality tier not configured for codec "+codec+". Falling back to libx264.")
+		codecConfigs = tierTable["libx264"]
+	}
+	cfg, ok := codecConfigs[tier]
+	if !ok {
+		warnings = append(warnings, "Unknown quality tier: "+tier)
+		return warnings
+	}
+	opts.CRF = cfg.crf
+	if cfg.preset != "" {
+		opts.Preset = cfg.preset
+	}
+	if opts.AudioBitrate == "" {
+		opts.AudioBitrate = cfg.audioBitrate
+	}
+	return warnings
 }
 
 // Preset is a named collection of conversion settings.
@@ -172,6 +293,10 @@ var audioOnlyFormats = map[string]bool{
 // BuildArgs constructs the ffmpeg command-line arguments.
 // Arg order: [-y] [-ss start] [-i input] [-t duration] [codec/quality args] [output]
 func BuildArgs(opts ConversionOptions) []string {
+	// Apply tier before any other logic so its CRF/preset/bitrate values
+	// flow through the existing arg-construction path unchanged.
+	applyQualityTier(&opts)
+
 	args := []string{"-y"}
 
 	// Pre-input: -ss before -i for fast seek to nearest keyframe
