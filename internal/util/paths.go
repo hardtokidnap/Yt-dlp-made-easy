@@ -20,6 +20,12 @@ var (
 	YtDlpPath string
 	// DefaultDownloadFolder is the default download location
 	DefaultDownloadFolder string
+	// PythonDir is the root of the portable Python runtime used for spotdl.
+	PythonDir string
+	// PythonExe is the full path to the bundled python executable.
+	PythonExe string
+	// DefaultSpotifyFolder is the default output folder for Spotify downloads.
+	DefaultSpotifyFolder string
 )
 
 func init() {
@@ -36,9 +42,12 @@ func init() {
 	LogFile = filepath.Join(AppDataDir, "ytdlp.log")
 	QueueFile = filepath.Join(AppDataDir, "queue.json")
 	YtDlpPath = filepath.Join(AppDataDir, "yt-dlp.exe")
+	PythonDir = filepath.Join(AppDataDir, "python")
+	PythonExe = filepath.Join(PythonDir, "python.exe")
 
-	// Default download folder
-	DefaultDownloadFolder = filepath.Join(os.Getenv("USERPROFILE"), "Downloads")
+	userProfile := os.Getenv("USERPROFILE")
+	DefaultDownloadFolder = filepath.Join(userProfile, "Downloads")
+	DefaultSpotifyFolder = filepath.Join(userProfile, "Music", "spotdl")
 }
 
 // EnsureAppDir creates the application directory if it doesn't exist

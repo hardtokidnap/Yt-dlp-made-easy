@@ -16,6 +16,7 @@ type Settings struct {
 	Network       NetworkSettings  `json:"Network"`
 	Auth          AuthSettings     `json:"Auth"`
 	Advanced      AdvancedSettings `json:"Advanced"`
+	Spotify       SpotifySettings  `json:"Spotify"`
 	mu            sync.RWMutex     `json:"-"`
 }
 
@@ -60,6 +61,16 @@ type AdvancedSettings struct {
 	JSRuntime      string `json:"JSRuntime"` // auto, deno, node, bun, or path
 }
 
+// SpotifySettings holds preferences for the Spotify (spotdl) subsystem.
+// Lives in its own block since the Spotify subsystem is fully isolated from
+// the main yt-dlp downloader (no shared queue, history, cookies, or binary).
+type SpotifySettings struct {
+	OutputFolder string `json:"OutputFolder"`
+	Format       string `json:"Format"`  // "mp3" | "m4a" | "flac" | "opus" | "ogg" | "wav"
+	Bitrate      string `json:"Bitrate"` // "auto" | "192k" | "256k" | "320k" | "best"
+	Threads      int    `json:"Threads"`
+}
+
 // DefaultSettings returns a new Settings instance with default values
 func DefaultSettings() *Settings {
 	return &Settings{
@@ -98,6 +109,12 @@ func DefaultSettings() *Settings {
 			OutputTemplate: "%(title)s.%(ext)s",
 			ExtraArgs:      "",
 			JSRuntime:      "auto", // auto-detect, or deno/node/bun
+		},
+		Spotify: SpotifySettings{
+			OutputFolder: util.DefaultSpotifyFolder,
+			Format:       "mp3",
+			Bitrate:      "auto",
+			Threads:      4,
 		},
 	}
 }
@@ -181,6 +198,18 @@ func (s *Settings) mergeDefaults() {
 	if s.Network.Retries == 0 {
 		s.Network.Retries = defaults.Network.Retries
 	}
+	if s.Spotify.OutputFolder == "" {
+		s.Spotify.OutputFolder = defaults.Spotify.OutputFolder
+	}
+	if s.Spotify.Format == "" {
+		s.Spotify.Format = defaults.Spotify.Format
+	}
+	if s.Spotify.Bitrate == "" {
+		s.Spotify.Bitrate = defaults.Spotify.Bitrate
+	}
+	if s.Spotify.Threads == 0 {
+		s.Spotify.Threads = defaults.Spotify.Threads
+	}
 }
 
 // GetGeneral returns general settings (thread-safe)
@@ -228,4 +257,17 @@ func (s *Settings) GetAdvanced() AdvancedSettings {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.Advanced
+}
+
+func (s *Settings) GetSpotify() SpotifySettings {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.Spotify
+}
+
+func (s *Settings) SetSpotify(sp SpotifySettings) error {
+	s.mu.Lock()
+	s.Spotify = sp
+	s.mu.Unlock()
+	return s.Save()
 }
