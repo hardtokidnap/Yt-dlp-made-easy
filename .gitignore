@@ -7,9 +7,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# LLMs
-.claude/settings.local.json
-.claude/plans/
+# LLMs - personal Claude Code config, agents, skills, rules, plans
+.claude/
 
 # C extensions
 *.so
