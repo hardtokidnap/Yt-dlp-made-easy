@@ -74,6 +74,21 @@ func TestEstimateOutputSize_NoInfo_Unknown(t *testing.T) {
 	}
 }
 
+// "Auto" video re-encode (no bitrate/CRF/tier) should still give a ballpark from
+// the source bitrate rather than "unknown", so the UI shows a number pre-convert.
+func TestEstimateOutputSize_AutoReencode_SourceFallback(t *testing.T) {
+	opts := ConversionOptions{OutputFormat: "mp4", VideoCodec: "libx264"}
+	info := &MediaInfo{DurationSec: 60, Width: 1920, Height: 1080, FPS: 30, Bitrate: "5.0 Mbps"}
+	est := EstimateOutputSize(opts, info)
+	if est.Confidence != "estimate" {
+		t.Errorf("Confidence: want estimate, got %q", est.Confidence)
+	}
+	want := int64(5_000_000 / 8 * 60)
+	if est.Bytes != want {
+		t.Errorf("Bytes: want %d, got %d", want, est.Bytes)
+	}
+}
+
 func TestEstimateOutputSize_Trim_ScalesDuration(t *testing.T) {
 	opts := ConversionOptions{
 		OutputFormat: "mp3",

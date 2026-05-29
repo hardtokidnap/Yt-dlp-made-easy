@@ -132,6 +132,16 @@ func EstimateOutputSize(opts ConversionOptions, info *MediaInfo) SizeEstimate {
 		return SizeEstimate{Bytes: bytes, Confidence: "estimate", Note: formatSizeNote(bytes, "estimate", "CRF mode, ±20%")}
 	}
 
+	// Re-encode with no explicit bitrate/CRF/tier ("Auto"): ffmpeg picks codec
+	// defaults, so the exact size is not derivable. Rather than show nothing,
+	// fall back to the source total bitrate as a rough ballpark.
+	if info.Bitrate != "" {
+		if bps := parseBitrateString(info.Bitrate); bps > 0 {
+			bytes := int64(float64(bps) / 8.0 * duration)
+			return SizeEstimate{Bytes: bytes, Confidence: "estimate", Note: formatSizeNote(bytes, "estimate", "rough, based on source")}
+		}
+	}
+
 	return SizeEstimate{Confidence: "unknown", Note: "Not enough information to estimate."}
 }
 
