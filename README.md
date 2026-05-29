@@ -28,6 +28,13 @@ A modern, lightweight GUI wrapper for [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 <img width="987" height="848" alt="image" src="https://github.com/user-attachments/assets/4d8f4feb-5279-46c5-9f8f-bd5b68bee5f9" />
 
 
+### Spotify Downloads
+- **Powered by [spotDL](https://github.com/spotDL/spotify-downloader)** in the backend - resolves Spotify tracks and embeds full metadata; installed on demand into the app data folder (your system Python is untouched)
+- **Tracks, albums, playlists, and liked songs** - paste a Spotify URL straight into the Download tab
+- **Routed through the yt-dlp pipeline** - Spotify items download via the same queue, so they get pause/resume, history, cookies, retries, and progress like any other download, with Spotify tags and cover art embedded afterward
+- **Bring your own API credentials** - paste your Spotify client ID/secret to avoid spotDL's shared, rate-limited defaults
+- **Playlists and liked songs via a one-time Spotify sign-in** (OAuth); the login is cached so you only authenticate once
+
 ### Media Conversion
 - **Built-in FFmpeg converter** with automatic FFmpeg download
 - **Media info preview** - see duration, resolution, codecs, bitrate, and file size before converting
@@ -165,6 +172,12 @@ cd frontend && npm install && cd ..
 │   │   └── history.go             # JSONL-backed download history
 │   ├── jsruntime/
 │   │   └── runtime.go             # JS runtime detection (Deno/Node/Bun)
+│   ├── spotify/
+│   │   ├── runtime.go             # Python/spotDL runtime detection + version floor
+│   │   ├── install_windows.go     # On-demand portable Python + spotDL install
+│   │   ├── install_other.go       # Non-Windows install stub
+│   │   ├── spotdl.go              # spotDL save/url/meta wrappers (resolve + tag)
+│   │   └── version.go             # spotDL version comparison
 │   ├── updater/
 │   │   └── updater.go             # yt-dlp version management
 │   └── util/
@@ -260,6 +273,7 @@ If you see "Could not copy cookie database":
 | Frontend | HTML5, JavaScript, Tailwind CSS |
 | Framework | [Wails v2](https://wails.io) |
 | Downloader | [yt-dlp](https://github.com/yt-dlp/yt-dlp) |
+| Spotify | [spotDL](https://github.com/spotDL/spotify-downloader) (auto-downloaded) |
 | Converter | [FFmpeg](https://ffmpeg.org) + [FFprobe](https://ffmpeg.org) (auto-downloaded) |
 
 ---
