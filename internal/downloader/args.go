@@ -11,7 +11,9 @@ import (
 
 // BuildArgs constructs yt-dlp command line arguments.
 // URL is appended last as required by yt-dlp.
-func BuildArgs(url string, settings *config.Settings, isAudioOnly bool) []string {
+// audioFormat / audioQuality override the global Download settings for this
+// item when non-empty (used by Spotify items to honor Settings.Spotify).
+func BuildArgs(url string, settings *config.Settings, isAudioOnly bool, audioFormat, audioQuality string) []string {
 	args := []string{util.YtDlpPath}
 
 	args = append(args, "-P", settings.General.SaveFolder)
@@ -24,9 +26,17 @@ func BuildArgs(url string, settings *config.Settings, isAudioOnly bool) []string
 	args = append(args, "--continue", "--newline")
 
 	if isAudioOnly {
+		af := settings.Download.AudioFormat
+		if audioFormat != "" {
+			af = audioFormat
+		}
+		aq := settings.Download.AudioQuality
+		if audioQuality != "" {
+			aq = audioQuality
+		}
 		args = append(args, "-x")
-		args = append(args, "--audio-format", settings.Download.AudioFormat)
-		args = append(args, "--audio-quality", settings.Download.AudioQuality)
+		args = append(args, "--audio-format", af)
+		args = append(args, "--audio-quality", aq)
 	} else {
 		formatStr := buildFormatString(settings.Download.Quality)
 		if formatStr != "" {

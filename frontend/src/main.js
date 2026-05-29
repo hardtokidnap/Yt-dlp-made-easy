@@ -3,6 +3,8 @@ import {EventsOn, OnFileDrop} from '../wailsjs/runtime/runtime';
 import * as App from '../wailsjs/go/main/App';
 
 // State management
+// Anything that should survive tab switches lives here; renderXxxTab() rebuilds
+// markup from scratch on every entry, so it reads from state to rehydrate.
 const state = {
     currentTab: 'download',
     downloads: {},
@@ -13,7 +15,11 @@ const state = {
     conversion: null,
     ffmpegInstalled: false,
     batchFiles: [],
-    batchQueue: null
+    batchQueue: null,
+    // Download tab persistence
+    downloadUrl: '',
+    spotifyTracks: null,   // null = not previewed yet; [] = previewed empty; [...] = picker rows
+    spotifyRuntimeReady: false
 };
 
 // Tab definitions
@@ -112,24 +118,38 @@ function renderDownloadTab() {
                         <p id="url-source-hint" class="text-xs text-gray-500 mt-1 hidden"></p>
                     </div>
 
-                    <!-- Inline Spotify picker (hidden by default; appears when a Spotify URL is pasted and previewed) -->
+                    <!-- Inline Spotify picker; appears when a Spotify URL is pasted.
+                         spotdl matches each track to a source URL; the normal
+                         download queue does the download and shows progress. -->
                     <div id="spotify-inline" class="hidden border-t border-gray-700 pt-4 space-y-3">
                         <div id="spotify-install-card" class="hidden p-3 rounded bg-yellow-900/20 border border-yellow-700">
-                            <p class="text-sm text-gray-200 mb-2">Spotify runtime not installed (~80 MB, fetched once into the app data folder; system Python is untouched).</p>
-                            <button id="spotify-install-btn" class="btn-primary text-sm" onclick="window.installSpotifyRuntime()">Install Spotify runtime</button>
-                            <pre id="spotify-install-log" class="mt-2 text-xs text-gray-400 max-h-32 overflow-auto hidden"></pre>
+                            <p id="spotify-install-msg" class="text-sm text-gray-200 mb-2">Spotify runtime not installed (~80 MB, fetched once into the app data folder; system Python is untouched).</p>
+                            <button id="spotify-install-btn" class="btn-secondary text-sm" onclick="window.installSpotifyRuntime()">Install Spotify runtime</button>
+                            <pre id="spotify-install-log" class="mt-2 text-xs text-gray-400 max-h-32 overflow-auto hidden bg-black/30 p-2 rounded"></pre>
                         </div>
-                        <div id="spotify-actions" class="hidden flex gap-2">
-                            <button class="btn-secondary text-sm" onclick="window.previewSpotify()">Preview Tracks</button>
-                            <button id="spotify-download-btn" class="btn-primary text-sm hidden" onclick="window.startSpotifyDownload()">Download Selected</button>
-                        </div>
-                        <div id="spotify-preview"></div>
-                        <details>
-                            <summary class="cursor-pointer text-xs text-gray-400 select-none">⚙️ Advanced (workarounds for YouTube blocks)</summary>
-                            <div class="mt-2 space-y-2 text-sm">
+
+                        <details id="spotify-advanced">
+                            <summary class="cursor-pointer text-xs text-gray-400 select-none">⚙️ Spotify API credentials + matching source</summary>
+                            <div class="mt-2 space-y-3 text-sm">
                                 <div>
-                                    <label class="block mb-1">Audio Provider</label>
-                                    <select id="spotify-audio-provider" class="select-field w-full" onchange="window.saveSpotifyAdvanced()"></select>
+                                    <label class="block mb-1">Spotify API credentials (required)</label>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <input type="text" id="spotify-client-id" class="input-field" placeholder="client_id" onchange="window.saveSpotifyAdvanced()" onblur="window.saveSpotifyAdvanced()">
+                                        <input type="password" id="spotify-client-secret" class="input-field" placeholder="client_secret" onchange="window.saveSpotifyAdvanced()" onblur="window.saveSpotifyAdvanced()">
+                                    </div>
+                                    <p class="text-xs text-gray-500 mt-1">Create an app at <span class="text-blue-400">developer.spotify.com/dashboard</span> and paste the keys. Downloads will not work without them.</p>
+                                </div>
+                                <div>
+                                    <label class="block mb-1">Matching source</label>
+                                    <select id="spotify-audio-provider" class="select-field w-full" onchange="window.saveSpotifyAdvanced()">
+                                        <option value="youtube-music">YouTube Music (recommended)</option>
+                                        <option value="youtube">YouTube</option>
+                                        <option value="soundcloud">SoundCloud</option>
+                                        <option value="bandcamp">Bandcamp</option>
+                                        <option value="slider-kz">Slider.kz</option>
+                                        <option value="piped">Piped (often down)</option>
+                                    </select>
+                                    <p class="text-xs text-gray-500 mt-1">Used only to match a track to a source URL; yt-dlp does the download.</p>
                                 </div>
                                 <label class="flex items-start gap-2 cursor-pointer">
                                     <input type="checkbox" id="spotify-use-cookies" onchange="window.saveSpotifyAdvanced()">
@@ -141,15 +161,11 @@ function renderDownloadTab() {
                                 </label>
                             </div>
                         </details>
-                        <div id="spotify-progress-card" class="hidden">
-                            <div class="flex justify-between items-center mb-1">
-                                <span id="spotify-progress-status" class="text-sm text-gray-300">Starting...</span>
-                                <div class="flex items-center gap-3">
-                                    <span id="spotify-progress-count" class="text-sm text-gray-400"></span>
-                                    <button onclick="window.cancelSpotifyDownload()" class="btn-danger text-sm">Cancel</button>
-                                </div>
-                            </div>
-                            <pre id="spotify-log" class="text-xs text-gray-400 max-h-32 overflow-auto bg-black/30 p-2 rounded"></pre>
+
+                        <div id="spotify-preview"></div>
+                        <div id="spotify-actions" class="hidden flex gap-2">
+                            <button class="btn-secondary text-sm" onclick="window.previewSpotify()">Preview Tracks</button>
+                            <button id="spotify-download-btn" class="btn-primary text-sm hidden" onclick="window.startSpotifyDownload()">Download Selected</button>
                         </div>
                     </div>
 
@@ -214,6 +230,15 @@ function renderDownloadTab() {
 
     updateDownloadQueue();
     displaySavePath();
+
+    // Restore URL textarea + Spotify inline panel after a tab switch.
+    const urlInput = document.getElementById('url-input');
+    if (urlInput && state.downloadUrl) {
+        urlInput.value = state.downloadUrl;
+        // Triggers panel reveal, runtime hydrate, and rehydrate of track picker
+        // if state.spotifyTracks is non-empty.
+        window.onUrlInputChange();
+    }
 }
 
 // Start download
@@ -316,6 +341,58 @@ function updateDownloadQueue() {
         return;
     }
     queue.innerHTML = html;
+}
+
+// _etaEma holds a smoothed ETA (seconds) per item id. yt-dlp's raw ETA swings
+// with instantaneous speed; we low-pass it so the displayed value is stable.
+const _etaEma = {};
+
+function _parseEtaSeconds(eta) {
+    if (!eta || /unknown/i.test(eta)) return null;
+    const parts = eta.split(':').map(Number);
+    if (parts.some(isNaN)) return null;
+    return parts.reduce((acc, p) => acc * 60 + p, 0);
+}
+
+function _formatEta(sec) {
+    sec = Math.max(0, Math.round(sec));
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+    const pad = n => String(n).padStart(2, '0');
+    return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+
+// smoothedEta returns a stabilized ETA string for an item, updating its EMA.
+// Non-numeric ETAs (e.g. "Unknown") pass through and reset the EMA.
+function smoothedEta(item) {
+    const raw = _parseEtaSeconds(item.eta);
+    if (raw === null) { delete _etaEma[item.id]; return item.eta || ''; }
+    const prev = _etaEma[item.id];
+    const ema = prev === undefined ? raw : prev * 0.75 + raw * 0.25;
+    _etaEma[item.id] = ema;
+    return _formatEta(ema);
+}
+
+// dlSpeedEtaText renders the "speed • ETA x" line with a smoothed ETA.
+function dlSpeedEtaText(item) {
+    const eta = (item.status === 'downloading' && item.eta) ? smoothedEta(item) : '';
+    return `${item.speed || ''} ${eta ? '• ETA ' + eta : ''}`;
+}
+
+// patchDownloadProgress updates an existing card's progress bar / status / speed
+// in place, without rebuilding the queue HTML, so the per-item spinner animation
+// stays smooth during the frequent progress ticks. Returns false if the card is
+// not present (caller should fall back to a full updateDownloadQueue()).
+function patchDownloadProgress(item) {
+    const fill = document.getElementById(`dl-fill-${item.id}`);
+    if (!fill) return false;
+    fill.style.width = `${item.progress || 0}%`;
+    const status = document.getElementById(`dl-status-${item.id}`);
+    if (status) status.textContent = getStatusText(item);
+    const speed = document.getElementById(`dl-speed-${item.id}`);
+    if (speed) speed.textContent = dlSpeedEtaText(item);
+    const spin = document.getElementById(`dl-spin-${item.id}`);
+    if (spin) spin.classList.toggle('hidden', !(item.status === 'downloading' || item.status === 'pending'));
+    return true;
 }
 
 function renderHistoryCard(entry) {
@@ -424,12 +501,15 @@ function renderDownloadCard(item) {
             </div>
 
             <div class="progress-bar">
-                <div class="progress-bar-fill" style="width: ${item.progress}%"></div>
+                <div class="progress-bar-fill" id="dl-fill-${item.id}" style="width: ${item.progress}%"></div>
             </div>
 
             <div class="flex justify-between text-sm text-gray-300">
-                <span>${getStatusText(item)}</span>
-                <span>${item.speed || ''} ${item.eta ? `• ETA ${item.eta}` : ''}</span>
+                <span>
+                    <span id="dl-spin-${item.id}" class="animate-spin inline-block${(item.status === 'downloading' || item.status === 'pending') ? '' : ' hidden'}">⏳</span>
+                    <span id="dl-status-${item.id}">${getStatusText(item)}</span>
+                </span>
+                <span id="dl-speed-${item.id}">${dlSpeedEtaText(item)}</span>
             </div>
         </div>
     `;
@@ -1723,26 +1803,52 @@ function isSpotifyUrl(u) {
     return SPOTIFY_URL_RE.test(u.trim().split(/\s+/)[0]);
 }
 
+
 // Toggle the inline Spotify panel when a Spotify URL appears in the textarea.
-// First reveal lazily initializes the panel (runtime check, settings hydration).
-let _spotifyInlineInit = false;
+// Always runs through hydrateSpotifyInline so the DOM is in sync with state
+// after every tab re-render, with no module-level "did I init yet" flag.
+// True while a Spotify preview is running, so onUrlInputChange (which can fire
+// from clipboard polling / input events) does not clobber the in-progress or
+// result UI with the detect-hint.
+let _spotifyPreviewing = false;
+
 window.onUrlInputChange = async function() {
     const url   = document.getElementById('url-input')?.value || '';
     const panel = document.getElementById('spotify-inline');
     const hint  = document.getElementById('url-source-hint');
+    state.downloadUrl = url; // persist across tab switches
     if (!panel || !hint) return;
+    if (_spotifyPreviewing) return; // don't disturb the active preview UI
 
     if (isSpotifyUrl(url)) {
         panel.classList.remove('hidden');
         hint.classList.remove('hidden');
-        hint.textContent = 'Detected Spotify URL — uses spotdl + the bundled Python runtime.';
-        if (!_spotifyInlineInit) {
-            _spotifyInlineInit = true;
-            await initSpotifyInline();
+        await hydrateSpotifyInline();
+        // Warn up front when credentials are missing: downloads cannot work without them.
+        let hasCreds = false;
+        try { hasCreds = await App.SpotifyCredsConfigured(); } catch (_) {}
+        const isPlaylist = /\/(playlist|collection)/.test(url);
+        if (!hasCreds) {
+            hint.className = 'text-xs text-yellow-400 mt-1';
+            hint.textContent = 'Spotify URL detected, but no API credentials set. Add your client_id/client_secret below (developer.spotify.com/dashboard) or downloads will fail.';
+            const adv = document.getElementById('spotify-advanced');
+            if (adv) adv.open = true; // auto-expand the credentials section
+        } else if (isPlaylist) {
+            // Playlists need Spotify OAuth; first preview opens a browser to sign in.
+            hint.className = 'text-xs text-yellow-400 mt-1';
+            hint.textContent = 'Playlist detected. Reading a playlist needs a one-time Spotify sign-in: add redirect URI http://127.0.0.1:9900/ to your app, then Preview opens a browser to log in.';
+        } else {
+            hint.className = 'text-xs text-gray-500 mt-1';
+            hint.textContent = 'Detected Spotify URL. spotdl matches each track; yt-dlp downloads it into the queue.';
+        }
+        // Re-render previously fetched track picker if we already have results
+        if (state.spotifyTracks && state.spotifyTracks.length > 0) {
+            renderSpotifyTrackPicker(state.spotifyTracks);
         }
     } else {
         panel.classList.add('hidden');
         if (url) {
+            hint.className = 'text-xs text-gray-500 mt-1';
             hint.classList.remove('hidden');
             hint.textContent = 'Will download via yt-dlp.';
         } else {
@@ -1751,39 +1857,40 @@ window.onUrlInputChange = async function() {
     }
 };
 
-async function initSpotifyInline() {
-    let info = { python_installed: false, spotdl_installed: false };
+// hydrateSpotifyInline fills the Advanced controls and toggles install/actions
+// visibility from the latest backend state. Idempotent and safe to call after
+// every render (DOM was just rebuilt by renderDownloadTab).
+async function hydrateSpotifyInline() {
+    let info = { python_installed: false, spotdl_installed: false, spotdl_outdated: false };
     try { info = await App.GetSpotifyRuntimeInfo(); } catch (_) { /* default to not-ready */ }
-    const ready = info.python_installed && info.spotdl_installed;
+    const ready = info.python_installed && info.spotdl_installed && !info.spotdl_outdated;
+    state.spotifyRuntimeReady = ready;
 
     const installCard = document.getElementById('spotify-install-card');
+    const installMsg  = document.getElementById('spotify-install-msg');
     const actions     = document.getElementById('spotify-actions');
     if (installCard) installCard.classList.toggle('hidden', ready);
     if (actions)     actions.classList.toggle('hidden', !ready);
+    if (installMsg && info.spotdl_installed && info.spotdl_outdated) {
+        installMsg.textContent = 'Spotify tool is outdated and must be updated to download (one-time, into the app data folder).';
+    }
 
-    // Hydrate the Advanced section
-    let spSettings = { AudioProvider: 'piped', UseAuthCookies: false, UseProxy: false };
+    let spSettings = { AudioProvider: 'youtube-music', UseAuthCookies: false, UseProxy: false, ClientID: '', ClientSecret: '' };
     let authCookiesPath = '';
     let networkProxy = '';
     try {
         const all = await App.GetSettings();
-        spSettings = all.Spotify || spSettings;
+        spSettings = { ...spSettings, ...(all.Spotify || {}) };
         authCookiesPath = all.Auth?.CookiesFile || '';
         networkProxy   = all.Network?.Proxy || '';
     } catch (_) { /* keep defaults */ }
 
     const sel = document.getElementById('spotify-audio-provider');
-    if (sel) {
-        const opts = [
-            ['piped',         'Piped (recommended, avoids YT Music blocks)'],
-            ['youtube-music', 'YouTube Music (spotdl default — often blocked)'],
-            ['youtube',       'YouTube'],
-            ['soundcloud',    'SoundCloud'],
-            ['bandcamp',      'Bandcamp'],
-            ['slider-kz',     'Slider.kz'],
-        ];
-        sel.innerHTML = opts.map(([v, l]) => `<option value="${v}" ${spSettings.AudioProvider === v ? 'selected' : ''}>${l}</option>`).join('');
-    }
+    if (sel) sel.value = spSettings.AudioProvider || 'youtube-music';
+    const cid = document.getElementById('spotify-client-id');
+    if (cid) cid.value = spSettings.ClientID || '';
+    const csec = document.getElementById('spotify-client-secret');
+    if (csec) csec.value = spSettings.ClientSecret || '';
     const useCookies = document.getElementById('spotify-use-cookies');
     if (useCookies) useCookies.checked = !!spSettings.UseAuthCookies;
     const useProxy = document.getElementById('spotify-use-proxy');
@@ -1795,16 +1902,17 @@ async function initSpotifyInline() {
 }
 
 window.saveSpotifyAdvanced = async function() {
-    const provider = document.getElementById('spotify-audio-provider')?.value || 'piped';
-    const useCookies = !!document.getElementById('spotify-use-cookies')?.checked;
-    const useProxy   = !!document.getElementById('spotify-use-proxy')?.checked;
     try {
         const all = await App.GetSettings();
         all.Spotify = all.Spotify || {};
-        all.Spotify.AudioProvider = provider;
-        all.Spotify.UseAuthCookies = useCookies;
-        all.Spotify.UseProxy = useProxy;
+        all.Spotify.AudioProvider  = document.getElementById('spotify-audio-provider')?.value || 'youtube-music';
+        all.Spotify.UseAuthCookies = !!document.getElementById('spotify-use-cookies')?.checked;
+        all.Spotify.UseProxy       = !!document.getElementById('spotify-use-proxy')?.checked;
+        all.Spotify.ClientID       = document.getElementById('spotify-client-id')?.value?.trim() || '';
+        all.Spotify.ClientSecret   = document.getElementById('spotify-client-secret')?.value?.trim() || '';
         await App.SaveSettings(all);
+        // Refresh the detect hint so the creds warning clears once keys are set.
+        window.onUrlInputChange();
     } catch (e) {
         addVerboseLog(`Saving Spotify advanced settings failed: ${e}`);
     }
@@ -1817,10 +1925,7 @@ window.installSpotifyRuntime = async function() {
     if (log) log.classList.remove('hidden');
     try {
         await App.InstallSpotifyRuntime();
-        // Re-hydrate the inline panel so the install card disappears and the
-        // Preview / Download buttons appear without a tab reload.
-        _spotifyInlineInit = false;
-        await initSpotifyInline();
+        await hydrateSpotifyInline();
     } catch (e) {
         if (log) log.textContent += '\nERROR: ' + (e?.message || e);
         if (btn) btn.disabled = false;
@@ -1829,53 +1934,83 @@ window.installSpotifyRuntime = async function() {
 
 window.previewSpotify = async function() {
     const url = document.getElementById('url-input')?.value?.trim();
-    if (!url) return;
+    if (!url || _spotifyPreviewing) return;
+    _spotifyPreviewing = true;
     const previewBox = document.getElementById('spotify-preview');
+    const actionBtns = Array.from(document.querySelectorAll('#spotify-actions button'));
+    actionBtns.forEach(b => b.disabled = true);
+    const isPlaylist = /\/(playlist|collection)/.test(url);
     previewBox.classList.remove('hidden');
-    previewBox.innerHTML = '<p class="text-sm text-gray-400">Resolving tracks via spotdl...</p>';
+    previewBox.innerHTML = `<div class="flex items-center gap-2 text-sm text-blue-300 p-2 rounded bg-blue-900/20 border border-blue-800">
+        <span class="animate-spin">⏳</span>
+        <span>${isPlaylist
+            ? 'Reading playlist via Spotify (a browser may open to sign in; large playlists take a while)...'
+            : 'Resolving tracks via spotdl...'}</span>
+    </div>`;
+    addLog(`🎵 Preview: ${url}`);
     try {
         const tracks = await App.PreviewSpotifyURL(url);
-        if (!tracks || tracks.length === 0) {
-            previewBox.innerHTML = '<p class="text-sm text-red-400">No tracks found.</p>';
+        state.spotifyTracks = tracks || [];
+        if (state.spotifyTracks.length === 0) {
+            previewBox.innerHTML = '<p class="text-sm text-red-400">No tracks found. See the Log tab for spotdl output.</p>';
+            addLog('🎵 Preview: no tracks found');
             return;
         }
-        previewBox.innerHTML = `
-            <p class="text-sm text-gray-300 mb-2">${tracks.length} track(s) found:</p>
-            <div class="max-h-64 overflow-auto space-y-1 border border-gray-700 rounded p-2">
-            ${tracks.map(t => `
-                <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-800/50 px-2 py-1 rounded">
-                    <input type="checkbox" class="spotify-track-cb" data-url="${escapeHtml(t.url || '')}" checked>
-                    <span class="flex-1 truncate">${escapeHtml(t.artist || 'Unknown')} - ${escapeHtml(t.title || 'Unknown')}</span>
-                </label>
-            `).join('')}
-            </div>
-        `;
-        const dlBtn = document.getElementById('spotify-download-btn');
-        if (dlBtn) dlBtn.classList.remove('hidden');
+        renderSpotifyTrackPicker(state.spotifyTracks);
+        addLog(`🎵 Preview: ${state.spotifyTracks.length} track(s) resolved`);
     } catch (e) {
-        previewBox.innerHTML = '<p class="text-sm text-red-400">Preview failed: ' + escapeHtml(String(e?.message || e)) + '</p>';
+        const msg = String(e?.message || e);
+        const reason = msg.split('\n')[0].slice(0, 300);
+        previewBox.innerHTML = `<div class="text-sm text-red-300 p-2 rounded bg-red-900/20 border border-red-800">
+            <p class="font-medium mb-1">❌ Preview failed</p>
+            <p>${escapeHtml(reason)}</p>
+            <p class="text-xs text-gray-400 mt-1">Full details in the Log tab (enable Verbose Logging for raw spotdl output).</p>
+        </div>`;
+        addLog(`❌ spotdl preview failed: ${msg}`);
+        state.spotifyTracks = null;
+    } finally {
+        _spotifyPreviewing = false;
+        actionBtns.forEach(b => b.disabled = false);
     }
 };
+
+// renderSpotifyTrackPicker paints the picker. Used both by previewSpotify (live
+// resolution) and by hydrateSpotifyInline (rehydration after a tab switch).
+function renderSpotifyTrackPicker(tracks) {
+    const previewBox = document.getElementById('spotify-preview');
+    if (!previewBox) return;
+    previewBox.classList.remove('hidden');
+    previewBox.innerHTML = `
+        <p class="text-sm text-gray-300 mb-2">${tracks.length} track(s) found:</p>
+        <div class="max-h-64 overflow-auto space-y-1 border border-gray-700 rounded p-2">
+        ${tracks.map(t => `
+            <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-800/50 px-2 py-1 rounded">
+                <input type="checkbox" class="spotify-track-cb"
+                       data-url="${escapeHtml(t.url || '')}"
+                       data-title="${escapeHtml((t.artist || 'Unknown') + ' - ' + (t.title || 'Unknown'))}" checked>
+                <span class="flex-1 truncate">${escapeHtml(t.artist || 'Unknown')} - ${escapeHtml(t.title || 'Unknown')}</span>
+            </label>
+        `).join('')}
+        </div>
+    `;
+    const dlBtn = document.getElementById('spotify-download-btn');
+    if (dlBtn) dlBtn.classList.remove('hidden');
+}
 
 window.startSpotifyDownload = async function() {
-    const checked = document.querySelectorAll('.spotify-track-cb:checked');
-    const urls = Array.from(checked).map(el => el.dataset.url).filter(Boolean);
-    if (urls.length === 0) return;
-
-    const card = document.getElementById('spotify-progress-card');
-    if (card) card.classList.remove('hidden');
-    const log = document.getElementById('spotify-log');
-    if (log) log.textContent = '';
-
+    const checked = Array.from(document.querySelectorAll('.spotify-track-cb:checked'));
+    const tracks = checked.map(el => ({
+        url: el.dataset.url,
+        title: el.dataset.title || '',
+    })).filter(t => t.url);
+    if (tracks.length === 0) return;
+    addLog(`🎵 Resolving ${tracks.length} Spotify track(s) and queueing...`);
     try {
-        await App.DownloadSpotifyTracks(urls);
+        const n = await App.DownloadSpotifyTracks(tracks);
+        addLog(`🎵 Queued ${n} track(s) into the download queue.`);
     } catch (e) {
-        if (log) log.textContent += '\nERROR: ' + (e?.message || e) + '\n';
+        addLog(`❌ Spotify download failed: ${e?.message || e}`);
     }
-};
-
-window.cancelSpotifyDownload = function() {
-    try { App.CancelSpotifyDownload(); } catch (_) { /* ignore */ }
 };
 
 // History Tab
@@ -2869,7 +3004,13 @@ function setupEventListeners() {
         const prev = state.downloads[item.id];
         state.downloads[item.id] = item;
         if (state.currentTab === 'download') {
-            updateDownloadQueue();
+            // Same status -> patch progress in place (keeps the spinner smooth).
+            // Status change / new item -> full re-render (structure changed).
+            if (prev && prev.status === item.status && patchDownloadProgress(item)) {
+                // patched in place
+            } else {
+                updateDownloadQueue();
+            }
         }
         if (item.file_path && (!prev || prev.file_path !== item.file_path)) {
             addVerboseLog(`file_path set: "${item.file_path}"`);
@@ -2974,43 +3115,19 @@ function setupEventListeners() {
         if (el) { el.textContent = message; el.classList.remove('hidden'); }
     });
 
-    // Spotify subsystem events
+    // Spotify logging split: raw spotdl output (resolve/meta/preview, incl. the
+    // redacted command) -> Log tab only when Verbose Logging is on. Significant
+    // failures and runtime progress -> always visible. Download progress itself
+    // is the normal queue UI (download:update / queue:update).
+    EventsOn('spotify:log', (line) => addVerboseLog(`spotdl: ${line}`));
+    EventsOn('spotify:error', (msg) => addLog(`❌ spotdl: ${msg}`));
     EventsOn('spotify:runtime:progress', (msg) => {
-        const log = document.getElementById('spotify-install-log');
-        if (log) {
-            log.textContent += msg + '\n';
-            log.scrollTop = log.scrollHeight;
-        }
-    });
-
-    EventsOn('spotify:progress', (job) => {
-        const status = document.getElementById('spotify-progress-status');
-        const count  = document.getElementById('spotify-progress-count');
-        const log    = document.getElementById('spotify-log');
-        if (status) {
-            status.textContent = job.status === 'running' ? 'Downloading...' : job.status;
-        }
-        if (count) {
-            count.textContent = `${job.completed}/${job.total}` + (job.failed > 0 ? ` (${job.failed} failed)` : '');
-        }
-        if (log && job.last_line) {
-            log.textContent += job.last_line + '\n';
-            log.scrollTop = log.scrollHeight;
-        }
-    });
-
-    EventsOn('spotify:complete', (job) => {
-        const status = document.getElementById('spotify-progress-status');
-        if (status) {
-            status.textContent = job.status === 'completed' ? 'Done.' : ('Stopped: ' + job.status);
-        }
-    });
-
-    EventsOn('spotify:error', (msg) => {
-        const log = document.getElementById('spotify-log');
-        if (log) {
-            log.textContent += '\nERROR: ' + msg + '\n';
-            log.scrollTop = log.scrollHeight;
+        addLog(`🎵 spotdl runtime: ${msg}`);
+        const installLog = document.getElementById('spotify-install-log');
+        if (installLog) {
+            installLog.classList.remove('hidden');
+            installLog.textContent += msg + '\n';
+            installLog.scrollTop = installLog.scrollHeight;
         }
     });
 

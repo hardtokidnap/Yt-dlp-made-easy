@@ -24,8 +24,6 @@ var (
 	PythonDir string
 	// PythonExe is the full path to the bundled python executable.
 	PythonExe string
-	// DefaultSpotifyFolder is the default output folder for Spotify downloads.
-	DefaultSpotifyFolder string
 )
 
 func init() {
@@ -47,7 +45,6 @@ func init() {
 
 	userProfile := os.Getenv("USERPROFILE")
 	DefaultDownloadFolder = filepath.Join(userProfile, "Downloads")
-	DefaultSpotifyFolder = filepath.Join(userProfile, "Music", "spotdl")
 }
 
 // EnsureAppDir creates the application directory if it doesn't exist

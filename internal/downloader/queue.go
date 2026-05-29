@@ -25,6 +25,9 @@ type Queue struct {
 	OnItemUpdate  func(*Item)
 	OnQueueUpdate func()
 	OnLog         func(itemID, line string)
+	// OnSpotifyTag runs after a Spotify-origin item finishes downloading, to
+	// embed Spotify metadata into the file. Wired in app.go. Non-fatal on error.
+	OnSpotifyTag func(*Item) error
 }
 
 func NewQueue(settings *config.Settings) *Queue {
@@ -54,6 +57,28 @@ func (q *Queue) Add(url string, isAudioOnly bool, quality, format string) *Item 
 	return item
 }
 
+// AddSpotify enqueues a resolved Spotify track as a first-class audio item.
+// youtubeURL is the matched audio-source URL; spotifyURL/title come from the
+// Spotify preview metadata so the queue + history display the Spotify track,
+// not the YouTube video. audioFormat/audioQuality come from Settings.Spotify
+// and override the global Download audio settings for this item.
+func (q *Queue) AddSpotify(youtubeURL, spotifyURL, title, audioFormat, audioQuality string) *Item {
+	item := NewItem(youtubeURL, true, audioQuality, audioFormat)
+	item.SpotifyURL = spotifyURL
+	item.NeedsMetadata = true
+	item.Title = title
+	item.AudioFormat = audioFormat
+	item.AudioQuality = audioQuality
+
+	q.mu.Lock()
+	q.items[item.ID] = item
+	q.mu.Unlock()
+
+	go q.processItem(item)
+	q.notifyQueueUpdate()
+	return item
+}
+
 func (q *Queue) processItem(item *Item) {
 	// Block until a concurrency slot is available
 	select {
@@ -71,6 +96,9 @@ func (q *Queue) processItem(item *Item) {
 			q.OnLog(item.ID, line)
 		}
 	}
+	// Emit live progress (throttled in the downloader) so the queue card's
+	// percentage/speed/ETA update during the download, not just on completion.
+	d.OnProgress = func() { q.notifyItemUpdate(item) }
 
 	q.mu.Lock()
 	q.downloaders[item.ID] = d
@@ -84,8 +112,14 @@ func (q *Queue) processItem(item *Item) {
 
 	q.notifyItemUpdate(item)
 
-	if err := d.Wait(); err != nil {
+	if werr := d.Wait(); werr != nil {
 		q.notifyItemUpdate(item) // Error already set by Wait()
+	} else if item.NeedsMetadata && q.OnSpotifyTag != nil {
+		// Download succeeded; embed Spotify metadata before the item moves to
+		// history. Tagging failure is non-fatal: the audio file is kept.
+		if tagErr := q.OnSpotifyTag(item); tagErr != nil && q.OnLog != nil {
+			q.OnLog(item.ID, "Metadata tagging failed (audio kept): "+tagErr.Error())
+		}
 	}
 
 	q.mu.Lock()

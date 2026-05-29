@@ -103,10 +103,14 @@ export namespace config {
 	    }
 	}
 	export class SpotifySettings {
-	    OutputFolder: string;
 	    Format: string;
 	    Bitrate: string;
 	    Threads: number;
+	    AudioProvider: string;
+	    UseAuthCookies: boolean;
+	    UseProxy: boolean;
+	    ClientID: string;
+	    ClientSecret: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new SpotifySettings(source);
@@ -114,10 +118,14 @@ export namespace config {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.OutputFolder = source["OutputFolder"];
 	        this.Format = source["Format"];
 	        this.Bitrate = source["Bitrate"];
 	        this.Threads = source["Threads"];
+	        this.AudioProvider = source["AudioProvider"];
+	        this.UseAuthCookies = source["UseAuthCookies"];
+	        this.UseProxy = source["UseProxy"];
+	        this.ClientID = source["ClientID"];
+	        this.ClientSecret = source["ClientSecret"];
 	    }
 	}
 	export class Settings {
@@ -393,6 +401,10 @@ export namespace downloader {
 	    current_item: number;
 	    total_items: number;
 	    file_exists: boolean;
+	    spotify_url?: string;
+	    needs_metadata?: boolean;
+	    audio_format?: string;
+	    audio_quality?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Item(source);
@@ -421,6 +433,10 @@ export namespace downloader {
 	        this.current_item = source["current_item"];
 	        this.total_items = source["total_items"];
 	        this.file_exists = source["file_exists"];
+	        this.spotify_url = source["spotify_url"];
+	        this.needs_metadata = source["needs_metadata"];
+	        this.audio_format = source["audio_format"];
+	        this.audio_quality = source["audio_quality"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -583,6 +599,20 @@ export namespace main {
 	        this.format = source["format"];
 	    }
 	}
+	export class SpotifyTrackRequest {
+	    url: string;
+	    title: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SpotifyTrackRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.url = source["url"];
+	        this.title = source["title"];
+	    }
+	}
 
 }
 
@@ -594,6 +624,7 @@ export namespace spotify {
 	    python_path: string;
 	    spotdl_installed: boolean;
 	    spotdl_version: string;
+	    spotdl_outdated: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new RuntimeInfo(source);
@@ -606,6 +637,7 @@ export namespace spotify {
 	        this.python_path = source["python_path"];
 	        this.spotdl_installed = source["spotdl_installed"];
 	        this.spotdl_version = source["spotdl_version"];
+	        this.spotdl_outdated = source["spotdl_outdated"];
 	    }
 	}
 	export class Track {

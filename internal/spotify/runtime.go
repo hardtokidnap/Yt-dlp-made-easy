@@ -15,6 +15,11 @@ import (
 // build-tagged install_windows.go / install_other.go files.
 var _ = hiddenCmdCtx
 
+// spotdlVersionFloor is the minimum spotdl version with the genres .get fix
+// (Spotify deprecated the artist genres field for new apps) and the
+// --use-official-api flag. Keep in sync with the pin in install_windows.go.
+const spotdlVersionFloor = "4.5.0"
+
 // RuntimeInfo describes the install state of the portable Python and spotdl.
 type RuntimeInfo struct {
 	PythonInstalled bool   `json:"python_installed"`
@@ -22,6 +27,7 @@ type RuntimeInfo struct {
 	PythonPath      string `json:"python_path"`
 	SpotdlInstalled bool   `json:"spotdl_installed"`
 	SpotdlVersion   string `json:"spotdl_version"`
+	SpotdlOutdated  bool   `json:"spotdl_outdated"`
 }
 
 // DetectRuntime returns the current install state of the Spotify runtime.
@@ -37,6 +43,10 @@ func DetectRuntime() RuntimeInfo {
 	info.SpotdlInstalled = info.SpotdlVersion != "" &&
 		!strings.Contains(info.SpotdlVersion, "No module") &&
 		!strings.Contains(strings.ToLower(info.SpotdlVersion), "error")
+	if info.SpotdlInstalled {
+		// runVersion returns a bare "4.2.11" for `-m spotdl --version`.
+		info.SpotdlOutdated = spotdlBelow(info.SpotdlVersion, spotdlVersionFloor)
+	}
 	return info
 }
 

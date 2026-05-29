@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
+	"strings"
 	"time"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -28,10 +28,8 @@ type App struct {
 	queue     *downloader.Queue
 	history   *history.History
 	updater   *updater.Updater
-	converter   *converter.Converter
-	batchQueue  *converter.BatchQueue
-	spotifyJob  *spotify.Job
-	spotifyMu   sync.Mutex
+	converter  *converter.Converter
+	batchQueue *converter.BatchQueue
 }
 
 func NewApp() *App {
@@ -89,6 +87,30 @@ func (a *App) startup(ctx context.Context) {
 		wailsruntime.EventsEmit(a.ctx, "download:log", map[string]string{
 			"id":   itemID,
 			"line": line,
+		})
+	}
+	// Spotify-origin items get full metadata + cover embedded after download.
+	a.queue.OnSpotifyTag = func(item *downloader.Item) error {
+		sp := a.settings.GetSpotify()
+		// yt-dlp named the file from the YouTube title. spotdl meta matches by
+		// filename, so rename to the Spotify "Artist - Title" first, otherwise
+		// ambiguous/messy YouTube titles tag the wrong release.
+		if item.Title != "" && item.FilePath != "" {
+			if newPath, err := renameToTitle(item.FilePath, item.Title); err != nil {
+				a.queue.OnLog(item.ID, "Could not rename before tagging, using original name: "+err.Error())
+			} else {
+				item.FilePath = newPath
+			}
+		}
+		a.queue.OnLog(item.ID, "Tagging metadata via spotdl...")
+		return spotify.ApplyMetadata(a.ctx, item.FilePath, spotify.MetaOptions{
+			ClientID:     sp.ClientID,
+			ClientSecret: sp.ClientSecret,
+			FFmpegPath:   converter.FFmpegPath(),
+			CookieFile:   spotifyCookieFile(a.settings),
+			Proxy:        spotifyProxy(a.settings),
+		}, func(line string) {
+			wailsruntime.EventsEmit(a.ctx, "spotify:log", line) // verbose
 		})
 	}
 
@@ -505,78 +527,169 @@ func (a *App) InstallSpotifyRuntime() error {
 	})
 }
 
+// renameToTitle renames the downloaded file's base name to the given title
+// (sanitized), preserving directory and extension. Returns the new path, or the
+// original path on error. Used so spotdl meta matches the correct Spotify track
+// by filename instead of the YouTube video title.
+func renameToTitle(path, title string) (string, error) {
+	base := sanitizeFilename(title)
+	if base == "" {
+		return path, nil
+	}
+	newPath := filepath.Join(filepath.Dir(path), base+filepath.Ext(path))
+	if newPath == path {
+		return path, nil
+	}
+	if err := os.Rename(path, newPath); err != nil {
+		return path, err
+	}
+	return newPath, nil
+}
+
+// sanitizeFilename strips characters Windows disallows in filenames.
+func sanitizeFilename(s string) string {
+	r := strings.NewReplacer(
+		"<", "-", ">", "-", ":", "-", "\"", "'",
+		"/", "-", "\\", "-", "|", "-", "?", "", "*", "",
+	)
+	return strings.TrimSpace(r.Replace(s))
+}
+
+// spotifyAudioQuality maps a Settings.Spotify.Bitrate value to a yt-dlp
+// --audio-quality value. "auto"/"best"/"" -> "0" (best). A specific bitrate
+// ("192k", "320k") is passed through (yt-dlp accepts a bitrate string).
+func spotifyAudioQuality(bitrate string) string {
+	switch bitrate {
+	case "", "auto", "best":
+		return "0"
+	default:
+		return bitrate
+	}
+}
+
+// spotifyCookieFile returns the cookies path when the Spotify settings opt in.
+func spotifyCookieFile(s *config.Settings) string {
+	if s.GetSpotify().UseAuthCookies {
+		return s.GetAuth().CookiesFile
+	}
+	return ""
+}
+
+// spotifyProxy returns the proxy when the Spotify settings opt in.
+func spotifyProxy(s *config.Settings) string {
+	if s.GetSpotify().UseProxy {
+		return s.GetNetwork().Proxy
+	}
+	return ""
+}
+
+// SpotifyCredsConfigured reports whether both Spotify API credentials are set.
+// The frontend uses this to warn at URL-detect time that downloads need creds.
+func (a *App) SpotifyCredsConfigured() bool {
+	sp := a.settings.GetSpotify()
+	return sp.ClientID != "" && sp.ClientSecret != ""
+}
+
 // PreviewSpotifyURL resolves track metadata for a Spotify URL (track / playlist
-// / album) without downloading audio. 30-second timeout in case spotdl hangs.
-// Passes through AudioProvider / cookies / proxy so the ytmusic-connection
-// probe spotdl runs on 'save' uses the same workaround the download flow will.
+// / album) without downloading audio. 60-second timeout. Streams spotdl stdout
+// and stderr to the frontend as 'spotify:log' events (routed to the verbose log)
+// so the user can troubleshoot a failed resolve.
 func (a *App) PreviewSpotifyURL(url string) ([]spotify.Track, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	sp := a.settings.GetSpotify()
+	// Playlists and liked songs require OAuth (app-only tokens cannot read
+	// playlist items). The first such preview opens a browser to sign in, so it
+	// gets a much longer timeout; the token is then cached for silent reuse.
+	userAuth := spotifyNeedsUserAuth(url)
+	timeout := 60 * time.Second
+	if userAuth {
+		timeout = 5 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	prevOpts := spotify.PreviewOptions{
-		AudioProvider: a.settings.GetSpotify().AudioProvider,
+		AudioProvider: sp.AudioProvider,
+		ClientID:      sp.ClientID,
+		ClientSecret:  sp.ClientSecret,
+		CookieFile:    spotifyCookieFile(a.settings),
+		Proxy:         spotifyProxy(a.settings),
+		UserAuth:      userAuth,
+		CachePath:     spotifyOAuthCachePath(),
+	}
+	// spotdl retries on a 429 by sleeping out the (huge) retry-after, which would
+	// hang until our timeout. Detect the rate-limit line in the live output and
+	// cancel immediately so the user gets a fast, clear failure instead.
+	var rateLimited bool
+	tracks, err := spotify.PreviewURL(ctx, url, prevOpts, func(line string) {
+		wailsruntime.EventsEmit(a.ctx, "spotify:log", line)
+		if strings.Contains(line, "reached a rate/request limit") {
+			rateLimited = true
+			cancel()
+		}
+	})
+	if err != nil && rateLimited {
+		return nil, fmt.Errorf("Spotify rate-limited your app. Large playlists exceed a personal dev app's quota; try a smaller playlist, wait, or request Extended Quota Mode for your app")
+	}
+	return tracks, err
+}
+
+// spotifyNeedsUserAuth reports whether a Spotify URL points at content only
+// readable with user OAuth (playlists, liked/saved songs) rather than an
+// app-only token (tracks, albums, artists).
+func spotifyNeedsUserAuth(url string) bool {
+	return strings.Contains(url, "/playlist/") || strings.Contains(url, "/collection")
+}
+
+// spotifyOAuthCachePath is where spotipy stores the cached OAuth token so the
+// user does not re-login on every playlist action.
+func spotifyOAuthCachePath() string {
+	return filepath.Join(util.AppDataDir, "spotify-oauth.cache")
+}
+
+// SpotifyTrackRequest is one track the user chose to download.
+type SpotifyTrackRequest struct {
+	URL   string `json:"url"`   // Spotify track URL
+	Title string `json:"title"` // "Artist - Title" for queue/history display
+}
+
+// DownloadSpotifyTracks resolves each selected Spotify track to an audio-source
+// URL via spotdl, then enqueues it as a first-class download. The existing
+// queue handles the download; OnSpotifyTag embeds metadata on completion.
+// Returns the number of tracks successfully enqueued.
+func (a *App) DownloadSpotifyTracks(tracks []SpotifyTrackRequest) (int, error) {
+	if len(tracks) == 0 {
+		return 0, fmt.Errorf("no tracks selected")
+	}
+	if !a.updater.IsInstalled() {
+		return 0, fmt.Errorf("yt-dlp is not installed yet, please wait")
 	}
 	sp := a.settings.GetSpotify()
-	if sp.UseAuthCookies {
-		prevOpts.CookieFile = a.settings.GetAuth().CookiesFile
+	if sp.ClientID == "" || sp.ClientSecret == "" {
+		return 0, fmt.Errorf("Spotify API credentials are required: add them in the Spotify panel (developer.spotify.com/dashboard)")
 	}
-	if sp.UseProxy {
-		prevOpts.Proxy = a.settings.GetNetwork().Proxy
-	}
-	return spotify.PreviewURL(ctx, url, prevOpts)
-}
 
-// DownloadSpotifyTracks starts a spotdl download in the background. Progress
-// is emitted as "spotify:progress" + "spotify:complete" events.
-func (a *App) DownloadSpotifyTracks(urls []string) (string, error) {
-	if len(urls) == 0 {
-		return "", fmt.Errorf("no URLs provided")
+	resolveOpts := spotify.ResolveOptions{
+		ClientID:      sp.ClientID,
+		ClientSecret:  sp.ClientSecret,
+		AudioProvider: sp.AudioProvider,
+		CookieFile:    spotifyCookieFile(a.settings),
+		Proxy:         spotifyProxy(a.settings),
 	}
-	a.spotifyMu.Lock()
-	if a.spotifyJob != nil && a.spotifyJob.Status == "running" {
-		a.spotifyMu.Unlock()
-		return "", fmt.Errorf("a Spotify download is already running")
-	}
-	a.spotifyMu.Unlock()
+	verbose := func(line string) { wailsruntime.EventsEmit(a.ctx, "spotify:log", line) }
 
-	settings := a.settings.GetSpotify()
-	opts := spotify.Options{
-		URLs:          urls,
-		OutputFolder:  settings.OutputFolder,
-		Format:        settings.Format,
-		Bitrate:       settings.Bitrate,
-		Threads:       settings.Threads,
-		FFmpegPath:    converter.FFmpegPath(),
-		AudioProvider: settings.AudioProvider,
-	}
-	if settings.UseAuthCookies {
-		opts.CookieFile = a.settings.GetAuth().CookiesFile
-	}
-	if settings.UseProxy {
-		opts.Proxy = a.settings.GetNetwork().Proxy
-	}
-	go func() {
-		ctx := context.Background()
-		_, err := spotify.Download(ctx, opts, func(job *spotify.Job) {
-			a.spotifyMu.Lock()
-			a.spotifyJob = job
-			a.spotifyMu.Unlock()
-			wailsruntime.EventsEmit(a.ctx, "spotify:progress", job)
-			if job.Status == "completed" || job.Status == "failed" || job.Status == "cancelled" {
-				wailsruntime.EventsEmit(a.ctx, "spotify:complete", job)
-			}
-		})
+	enqueued := 0
+	for _, tr := range tracks {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ytURL, err := spotify.ResolveURL(ctx, tr.URL, resolveOpts, verbose)
+		cancel()
 		if err != nil {
-			wailsruntime.EventsEmit(a.ctx, "spotify:error", err.Error())
+			wailsruntime.EventsEmit(a.ctx, "spotify:error", "Could not match "+tr.URL+": "+err.Error())
+			continue
 		}
-	}()
-	return "started", nil
-}
-
-// CancelSpotifyDownload kills the in-flight spotdl process if any.
-func (a *App) CancelSpotifyDownload() {
-	a.spotifyMu.Lock()
-	defer a.spotifyMu.Unlock()
-	if a.spotifyJob != nil {
-		a.spotifyJob.Cancel()
+		a.queue.AddSpotify(ytURL, tr.URL, tr.Title, sp.Format, spotifyAudioQuality(sp.Bitrate))
+		enqueued++
 	}
+	if enqueued == 0 {
+		return 0, fmt.Errorf("no tracks could be matched; see the Log tab")
+	}
+	return enqueued, nil
 }

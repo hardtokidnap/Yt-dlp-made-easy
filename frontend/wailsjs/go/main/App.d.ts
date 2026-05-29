@@ -23,8 +23,6 @@ export function CancelBatchConversion():Promise<void>;
 
 export function CancelConversion():Promise<void>;
 
-export function CancelSpotifyDownload():Promise<void>;
-
 export function CheckForUpdates():Promise<updater.UpdateInfo>;
 
 export function ClearCompletedDownloads():Promise<number>;
@@ -37,7 +35,7 @@ export function DownloadDeno():Promise<void>;
 
 export function DownloadFFmpeg():Promise<void>;
 
-export function DownloadSpotifyTracks(arg1:Array<string>):Promise<string>;
+export function DownloadSpotifyTracks(arg1:Array<main.SpotifyTrackRequest>):Promise<number>;
 
 export function EstimateConversionSize(arg1:converter.ConversionOptions):Promise<converter.SizeEstimate>;
 
@@ -100,6 +98,8 @@ export function ResumeAllDownloads():Promise<number>;
 export function ResumeDownload(arg1:string):Promise<void>;
 
 export function SaveSettings(arg1:config.Settings):Promise<void>;
+
+export function SpotifyCredsConfigured():Promise<boolean>;
 
 export function StartBatchConversion(arg1:Array<string>,arg2:converter.ConversionOptions):Promise<void>;
 

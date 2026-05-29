@@ -66,13 +66,18 @@ type AdvancedSettings struct {
 // the main yt-dlp downloader. It reads Auth.CookiesFile and Network.Proxy
 // when sending those to spotdl, but does not share queue/history/yt-dlp binary.
 type SpotifySettings struct {
-	OutputFolder  string `json:"OutputFolder"`
 	Format        string `json:"Format"`         // "mp3" | "m4a" | "flac" | "opus" | "ogg" | "wav"
 	Bitrate       string `json:"Bitrate"`        // "auto" | "192k" | "256k" | "320k" | "best"
 	Threads       int    `json:"Threads"`
-	AudioProvider string `json:"AudioProvider"` // "piped" (default) | "youtube-music" | "youtube" | "soundcloud" | "bandcamp" | "slider-kz"
+	AudioProvider string `json:"AudioProvider"` // "youtube-music" (default) | "youtube" | "soundcloud" | "bandcamp" | "slider-kz" | "piped"
 	UseAuthCookies bool  `json:"UseAuthCookies"` // when true, spotdl receives Auth.CookiesFile
 	UseProxy       bool  `json:"UseProxy"`       // when true, spotdl receives Network.Proxy
+	// Per-user Spotify Web API credentials. spotdl ships shared defaults that
+	// get globally rate-limited (HTTP 429 with retry-after = 86400). Setting
+	// these here lets the user create their own app at developer.spotify.com
+	// and avoid the shared throttle.
+	ClientID     string `json:"ClientID"`
+	ClientSecret string `json:"ClientSecret"`
 }
 
 // DefaultSettings returns a new Settings instance with default values
@@ -115,12 +120,12 @@ func DefaultSettings() *Settings {
 			JSRuntime:      "auto", // auto-detect, or deno/node/bun
 		},
 		Spotify: SpotifySettings{
-			OutputFolder:  util.DefaultSpotifyFolder,
 			Format:        "mp3",
 			Bitrate:       "auto",
 			Threads:       4,
-			// Piped avoids the YouTube Music block spotdl hits by default.
-			AudioProvider: "piped",
+			// youtube-music is used only to MATCH a track to an audio URL here
+			// (yt-dlp does the download); piped instances are unreliable.
+			AudioProvider: "youtube-music",
 			UseAuthCookies: false,
 			UseProxy:       false,
 		},
@@ -205,9 +210,6 @@ func (s *Settings) mergeDefaults() {
 	}
 	if s.Network.Retries == 0 {
 		s.Network.Retries = defaults.Network.Retries
-	}
-	if s.Spotify.OutputFolder == "" {
-		s.Spotify.OutputFolder = defaults.Spotify.OutputFolder
 	}
 	if s.Spotify.Format == "" {
 		s.Spotify.Format = defaults.Spotify.Format

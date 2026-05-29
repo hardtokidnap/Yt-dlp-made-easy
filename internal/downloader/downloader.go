@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"golang.org/x/sys/windows"
 
@@ -41,6 +42,10 @@ type Downloader struct {
 	cancel   context.CancelFunc
 	logFile  *os.File
 	OnLog    func(line string)
+	// OnProgress fires on progress ticks (throttled) so the UI can update the
+	// live percentage/speed/ETA. Wired by the Queue to emit a download:update.
+	OnProgress func()
+	lastEmit   time.Time
 }
 
 func NewDownloader(item *Item, settings *config.Settings) *Downloader {
@@ -51,12 +56,19 @@ func NewDownloader(item *Item, settings *config.Settings) *Downloader {
 }
 
 func (d *Downloader) Start(ctx context.Context) error {
-	args := BuildArgs(d.item.URL, d.settings, d.item.IsAudioOnly)
+	args := BuildArgs(d.item.URL, d.settings, d.item.IsAudioOnly, d.item.AudioFormat, d.item.AudioQuality)
 
 	ctx, cancel := context.WithCancel(ctx)
 	d.cancel = cancel
 
 	d.cmd = exec.CommandContext(ctx, args[0], args[1:]...)
+
+	// Force yt-dlp's stdio to UTF-8. With CREATE_NO_WINDOW there is no console,
+	// so Python falls back to the locale codepage (e.g. cp1252) and drops
+	// non-ASCII filename characters (？ … etc.) from its reported paths. That
+	// made the captured FilePath mismatch the real file -> spurious "file
+	// missing" and broken open-file/folder. UTF-8 mode keeps paths intact.
+	d.cmd.Env = append(os.Environ(), "PYTHONIOENCODING=utf-8", "PYTHONUTF8=1")
 
 	// Prevent console window flash on Windows
 	d.cmd.SysProcAttr = &syscall.SysProcAttr{
@@ -229,6 +241,12 @@ func (d *Downloader) parseOutput(line string) {
 			d.item.Progress = percent
 			d.item.Speed = matches[3]
 			d.item.ETA = matches[4]
+			// yt-dlp emits progress many times per second; throttle the UI
+			// update to ~4/s so we move the bar without flooding events.
+			if d.OnProgress != nil && time.Since(d.lastEmit) >= 250*time.Millisecond {
+				d.lastEmit = time.Now()
+				d.OnProgress()
+			}
 		}
 		return
 	}

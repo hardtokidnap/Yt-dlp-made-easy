@@ -7,10 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"ytdlp-easy/internal/jsruntime"
 	"ytdlp-easy/internal/util"
@@ -36,6 +34,66 @@ func envWithBundledDeno() []string {
 	return append(env, "PATH="+dir)
 }
 
+// AuthOptions selects how spotdl authenticates to the Spotify Web API.
+type AuthOptions struct {
+	ClientID     string
+	ClientSecret string
+	// UserAuth runs the OAuth (Authorization Code) flow instead of client
+	// credentials. Required to read playlist items and the user library, which
+	// Spotify no longer exposes to app-only tokens. The first call opens a
+	// browser; the token is cached at CachePath so later calls are silent.
+	UserAuth  bool
+	CachePath string
+}
+
+// authArgs returns the spotdl Spotify-auth flags for the given mode.
+//   - No creds: best-effort SpotipyFree (only --no-cache); user-auth impossible.
+//   - Client credentials (tracks/albums): official API + creds + --no-cache, so
+//     a stale spotipy token cache cannot mask the supplied credentials.
+//   - User auth (playlists/liked): official API + creds + --user-auth, and the
+//     OAuth token IS cached (no --no-cache) so the user does not re-login.
+func authArgs(o AuthOptions) []string {
+	if o.ClientID == "" || o.ClientSecret == "" {
+		return []string{"--no-cache"}
+	}
+	args := []string{"--use-official-api", "--client-id", o.ClientID, "--client-secret", o.ClientSecret}
+	if o.UserAuth {
+		args = append(args, "--user-auth")
+		if o.CachePath != "" {
+			args = append(args, "--cache-path", o.CachePath)
+		}
+		return args
+	}
+	return append(args, "--no-cache")
+}
+
+// redactCmd renders a spotdl arg list as a loggable command string with the
+// client-id / client-secret values masked. Never log raw args directly.
+func redactCmd(args []string) string {
+	out := make([]string, len(args))
+	copy(out, args)
+	for i := 0; i < len(out)-1; i++ {
+		if out[i] == "--client-id" || out[i] == "--client-secret" {
+			out[i+1] = "***"
+		}
+	}
+	return "$ python " + strings.Join(out, " ")
+}
+
+// parseResolvedURL extracts the matched audio URL from `spotdl url` stdout.
+// spotdl prints status/warning lines plus one bare URL per resolved track; we
+// take the first line that is itself a URL (not a line that merely contains
+// one, like "Processing query: https://open.spotify.com/...").
+func parseResolvedURL(output string) string {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "http://") || strings.HasPrefix(line, "https://") {
+			return line
+		}
+	}
+	return ""
+}
+
 // Track is one Spotify track resolved by spotdl.
 type Track struct {
 	URL         string  `json:"url"`
@@ -45,41 +103,6 @@ type Track struct {
 	DurationSec float64 `json:"duration_sec"`
 }
 
-// Options for a Spotify download job.
-type Options struct {
-	URLs         []string `json:"urls"`
-	OutputFolder string   `json:"output_folder"`
-	Format       string   `json:"format"`
-	Bitrate      string   `json:"bitrate"`
-	Threads      int      `json:"threads"`
-	FFmpegPath   string   `json:"ffmpeg_path"`
-	// AudioProvider lets us route around YouTube Music blocks. Accepted by
-	// spotdl --audio: "youtube-music" (default), "youtube", "piped",
-	// "soundcloud", "bandcamp", "slider-kz". Empty = spotdl default.
-	AudioProvider string `json:"audio_provider"`
-	// CookieFile is a yt-dlp cookies.txt path. Forwarded to spotdl via
-	// --cookie-file. Reuses the same Auth.CookiesFile the main downloader
-	// uses; spotdl consumes it independently.
-	CookieFile string `json:"cookie_file"`
-	// Proxy is an HTTP/HTTPS proxy URL. Forwarded to spotdl via --proxy.
-	// Reuses Network.Proxy from the main settings.
-	Proxy string `json:"proxy"`
-}
-
-// Job represents an in-flight spotdl download.
-type Job struct {
-	ID        string    `json:"id"`
-	URLs      []string  `json:"urls"`
-	Status    string    `json:"status"` // pending | running | completed | failed | cancelled
-	Completed int       `json:"completed"`
-	Failed    int       `json:"failed"`
-	Total     int       `json:"total"`
-	StartedAt time.Time `json:"started_at"`
-	LastLine  string    `json:"last_line"`
-	mu        sync.Mutex
-	cancel    context.CancelFunc
-}
-
 // PreviewOptions controls how PreviewURL contacts external services. Same
 // audio-provider / cookie / proxy knobs as a Download job, since spotdl runs
 // the same ytmusic-connection probe during 'save' as it does during 'download'.
@@ -87,11 +110,22 @@ type PreviewOptions struct {
 	AudioProvider string
 	CookieFile    string
 	Proxy         string
+	ClientID      string
+	ClientSecret  string
+	// UserAuth / CachePath enable the OAuth flow for playlist + liked-songs URLs
+	// (app-only tokens cannot read playlist items). Ignored for track/album URLs.
+	UserAuth  bool
+	CachePath string
 }
 
 // PreviewURL runs `spotdl save` on the given URL and returns the resolved tracks
-// without downloading audio. Used to populate a track-picker UI.
-func PreviewURL(ctx context.Context, url string, prevOpts PreviewOptions) ([]Track, error) {
+// without downloading audio. Used to populate a track-picker UI. The onLog
+// callback (optional) is invoked for every spotdl stdout/stderr line so the
+// UI can stream progress instead of waiting for exit.
+func PreviewURL(ctx context.Context, url string, prevOpts PreviewOptions, onLog func(string)) ([]Track, error) {
+	if onLog == nil {
+		onLog = func(string) {}
+	}
 	tmpFile, err := os.CreateTemp("", "spotdl-preview-*.spotdl")
 	if err != nil {
 		return nil, err
@@ -104,16 +138,21 @@ func PreviewURL(ctx context.Context, url string, prevOpts PreviewOptions) ([]Tra
 	if prevOpts.AudioProvider != "" {
 		args = append(args, "--audio", prevOpts.AudioProvider)
 	}
+	args = append(args, authArgs(AuthOptions{
+		ClientID:     prevOpts.ClientID,
+		ClientSecret: prevOpts.ClientSecret,
+		UserAuth:     prevOpts.UserAuth,
+		CachePath:    prevOpts.CachePath,
+	})...)
 	if prevOpts.CookieFile != "" {
 		args = append(args, "--cookie-file", prevOpts.CookieFile)
 	}
 	if prevOpts.Proxy != "" {
 		args = append(args, "--proxy", prevOpts.Proxy)
 	}
-	cmd := hiddenCmd(util.PythonExe, args...)
-	cmd.Env = envWithBundledDeno()
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return nil, fmt.Errorf("spotdl save failed: %v: %s", err, string(out))
+	onLog(redactCmd(args))
+	if _, err := runSpotdl(ctx, args, onLog); err != nil {
+		return nil, fmt.Errorf("spotdl save failed: %w", err)
 	}
 
 	raw, err := os.ReadFile(tmpPath)
@@ -154,50 +193,69 @@ func PreviewURL(ctx context.Context, url string, prevOpts PreviewOptions) ([]Tra
 	return tracks, nil
 }
 
-// Download spawns spotdl to download the given URLs. progress is called on
-// every parsed line + on every status transition. Returns when the process
-// exits or context is cancelled.
-func Download(ctx context.Context, opts Options, progress func(*Job)) (*Job, error) {
-	ctx, cancel := context.WithCancel(ctx)
-	job := &Job{
-		ID:        strconv.FormatInt(time.Now().UnixNano(), 36),
-		URLs:      opts.URLs,
-		Status:    "running",
-		Total:     len(opts.URLs),
-		StartedAt: time.Now(),
-		cancel:    cancel,
-	}
-	emit := func() {
-		if progress != nil {
-			progress(job)
-		}
-	}
-	emit()
+// ResolveOptions controls how ResolveURL contacts Spotify + the matching provider.
+type ResolveOptions struct {
+	ClientID      string
+	ClientSecret  string
+	AudioProvider string // matching provider; default "youtube-music"
+	CookieFile    string
+	Proxy         string
+}
 
-	args := []string{"-m", "spotdl", "download"}
-	args = append(args, opts.URLs...)
-	if opts.OutputFolder != "" {
-		if err := os.MkdirAll(opts.OutputFolder, 0755); err != nil {
-			job.Status = "failed"
-			emit()
-			return job, fmt.Errorf("create output folder: %w", err)
-		}
-		args = append(args, "--output", filepath.Join(opts.OutputFolder, "{artists} - {title}.{output-ext}"))
+// ResolveURL runs `spotdl url` to match a single Spotify track URL to an
+// audio-source URL (e.g. music.youtube.com) without downloading. The onLog
+// callback (optional) receives the redacted command and every stdout/stderr
+// line for verbose troubleshooting.
+func ResolveURL(ctx context.Context, spotifyURL string, opts ResolveOptions, onLog func(string)) (string, error) {
+	if onLog == nil {
+		onLog = func(string) {}
 	}
-	if opts.Format != "" {
-		args = append(args, "--format", opts.Format)
+	provider := opts.AudioProvider
+	if provider == "" {
+		provider = "youtube-music"
 	}
-	if opts.Bitrate != "" && opts.Bitrate != "auto" {
-		args = append(args, "--bitrate", opts.Bitrate)
+	args := []string{"-m", "spotdl", "url", spotifyURL, "--audio", provider}
+	args = append(args, authArgs(AuthOptions{ClientID: opts.ClientID, ClientSecret: opts.ClientSecret})...)
+	if opts.CookieFile != "" {
+		args = append(args, "--cookie-file", opts.CookieFile)
 	}
-	if opts.Threads > 0 {
-		args = append(args, "--threads", strconv.Itoa(opts.Threads))
+	if opts.Proxy != "" {
+		args = append(args, "--proxy", opts.Proxy)
 	}
+	onLog(redactCmd(args))
+
+	out, err := runSpotdl(ctx, args, onLog)
+	if err != nil {
+		return "", fmt.Errorf("spotdl url failed: %w", err)
+	}
+	url := parseResolvedURL(out)
+	if url == "" {
+		return "", fmt.Errorf("spotdl produced no match for %s", spotifyURL)
+	}
+	return url, nil
+}
+
+// MetaOptions controls the spotdl meta tagging pass.
+type MetaOptions struct {
+	ClientID     string
+	ClientSecret string
+	FFmpegPath   string
+	CookieFile   string
+	Proxy        string
+}
+
+// ApplyMetadata runs `spotdl meta` on an already-downloaded audio file to embed
+// full Spotify metadata (tags + cover art + lyrics). spotdl matches the file to
+// Spotify by filename, so the file should be named "<artist> - <title>". The
+// onLog callback (optional) receives the redacted command + raw output.
+func ApplyMetadata(ctx context.Context, filePath string, opts MetaOptions, onLog func(string)) error {
+	if onLog == nil {
+		onLog = func(string) {}
+	}
+	args := []string{"-m", "spotdl", "meta", filePath}
+	args = append(args, authArgs(AuthOptions{ClientID: opts.ClientID, ClientSecret: opts.ClientSecret})...)
 	if opts.FFmpegPath != "" {
 		args = append(args, "--ffmpeg", opts.FFmpegPath)
-	}
-	if opts.AudioProvider != "" {
-		args = append(args, "--audio", opts.AudioProvider)
 	}
 	if opts.CookieFile != "" {
 		args = append(args, "--cookie-file", opts.CookieFile)
@@ -205,76 +263,56 @@ func Download(ctx context.Context, opts Options, progress func(*Job)) (*Job, err
 	if opts.Proxy != "" {
 		args = append(args, "--proxy", opts.Proxy)
 	}
+	onLog(redactCmd(args))
+	if _, err := runSpotdl(ctx, args, onLog); err != nil {
+		return fmt.Errorf("spotdl meta failed: %w", err)
+	}
+	return nil
+}
 
+// runSpotdl starts `python <args>` with the bundled-Deno PATH, streams every
+// stdout/stderr line to onLog, and returns the combined output. Used by the
+// url/meta/save wrappers. The mutex guards buf because both scan goroutines
+// write to it concurrently.
+func runSpotdl(ctx context.Context, args []string, onLog func(string)) (string, error) {
 	cmd := hiddenCmdCtx(ctx, util.PythonExe, args...)
 	cmd.Env = envWithBundledDeno()
+
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		job.Status = "failed"
-		emit()
-		return job, err
+		return "", err
 	}
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		job.Status = "failed"
-		emit()
-		return job, err
+		return "", err
 	}
 	if err := cmd.Start(); err != nil {
-		job.Status = "failed"
-		emit()
-		return job, err
+		return "", err
 	}
 
-	scanLines := func(s *bufio.Scanner) {
-		for s.Scan() {
-			line := s.Text()
-			parseSpotdlLine(line, job)
-			emit()
+	var buf strings.Builder
+	var mu sync.Mutex
+	scan := func(r *bufio.Scanner) {
+		for r.Scan() {
+			line := r.Text()
+			onLog(line)
+			mu.Lock()
+			buf.WriteString(line)
+			buf.WriteByte('\n')
+			mu.Unlock()
 		}
 	}
-	go scanLines(bufio.NewScanner(stdout))
-	go scanLines(bufio.NewScanner(stderr))
-
-	err = cmd.Wait()
-	if ctx.Err() == context.Canceled {
-		job.Status = "cancelled"
-		emit()
-		return job, ctx.Err()
+	done := make(chan struct{}, 2)
+	go func() { scan(bufio.NewScanner(stdout)); done <- struct{}{} }()
+	go func() { scan(bufio.NewScanner(stderr)); done <- struct{}{} }()
+	<-done
+	<-done
+	waitErr := cmd.Wait()
+	mu.Lock()
+	out := buf.String()
+	mu.Unlock()
+	if waitErr != nil {
+		return out, fmt.Errorf("%v: %s", waitErr, out)
 	}
-	if err != nil {
-		job.Status = "failed"
-		emit()
-		return job, err
-	}
-	job.Status = "completed"
-	emit()
-	return job, nil
-}
-
-// Cancel a running job. Safe to call multiple times.
-func (j *Job) Cancel() {
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	if j.cancel != nil {
-		j.cancel()
-	}
-}
-
-// parseSpotdlLine looks for known stdout/stderr patterns and updates the job
-// counters. Conservative on purpose. Unknown lines just update LastLine so the
-// UI shows fresh status without us inventing fake state transitions.
-func parseSpotdlLine(line string, job *Job) {
-	job.mu.Lock()
-	defer job.mu.Unlock()
-	job.LastLine = line
-	low := strings.ToLower(line)
-	switch {
-	case strings.Contains(low, "downloaded "), strings.Contains(low, "downloaded:"):
-		job.Completed++
-	case strings.Contains(low, "skipped "):
-		job.Completed++
-	case strings.Contains(low, "error:"), strings.Contains(low, "lookuperror"):
-		job.Failed++
-	}
+	return out, nil
 }

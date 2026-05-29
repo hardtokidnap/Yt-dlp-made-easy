@@ -42,6 +42,15 @@ type Item struct {
 	TotalItems    int        `json:"total_items"`
 	FileExists    bool       `json:"file_exists"`
 	ProcessPID    int        `json:"-"` // Not serialized
+	// Spotify-origin items: SpotifyURL is the original Spotify track URL and
+	// NeedsMetadata triggers a spotdl-meta tagging pass on successful download.
+	SpotifyURL    string `json:"spotify_url,omitempty"`
+	NeedsMetadata bool   `json:"needs_metadata,omitempty"`
+	// AudioFormat / AudioQuality override the global Download.AudioFormat /
+	// AudioQuality for this item only (empty = use settings). Used so Spotify
+	// items honor Settings.Spotify.Format / Bitrate.
+	AudioFormat  string `json:"audio_format,omitempty"`
+	AudioQuality string `json:"audio_quality,omitempty"`
 }
 
 func NewItem(url string, isAudioOnly bool, quality, format string) *Item {

@@ -30,10 +30,6 @@ export function CancelConversion() {
   return window['go']['main']['App']['CancelConversion']();
 }
 
-export function CancelSpotifyDownload() {
-  return window['go']['main']['App']['CancelSpotifyDownload']();
-}
-
 export function CheckForUpdates() {
   return window['go']['main']['App']['CheckForUpdates']();
 }
@@ -184,6 +180,10 @@ export function ResumeDownload(arg1) {
 
 export function SaveSettings(arg1) {
   return window['go']['main']['App']['SaveSettings'](arg1);
+}
+
+export function SpotifyCredsConfigured() {
+  return window['go']['main']['App']['SpotifyCredsConfigured']();
 }
 
 export function StartBatchConversion(arg1, arg2) {

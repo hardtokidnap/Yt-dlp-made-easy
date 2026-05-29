@@ -23,7 +23,9 @@ const (
 	// Pinned to a known-good combination. Bump these together and re-test on update.
 	pythonEmbedURL = "https://www.python.org/ftp/python/3.12.7/python-3.12.7-embed-amd64.zip"
 	getPipURL      = "https://bootstrap.pypa.io/get-pip.py"
-	spotdlVersion  = "spotdl==4.2.*"
+	// Pinned to the first version with the genres .get fix + --use-official-api.
+	// Bump and re-test (resolve + meta + download) on update.
+	spotdlVersion = "spotdl==4.5.0"
 	pythonPthFile  = "python312._pth"
 )
 
@@ -74,9 +76,11 @@ func InstallRuntime(ctx context.Context, progress ProgressFn) error {
 		os.Remove(getPipPath)
 	}
 
-	if !spotdlInstalledCheck() {
-		progress("Installing spotdl (this can take a few minutes)...")
-		cmd := hiddenCmd(util.PythonExe, "-m", "pip", "install",
+	// Install when missing, or upgrade when an older spotdl (e.g. 4.2.x, which
+	// crashes on the deprecated Spotify artist 'genres' field) is present.
+	if info := DetectRuntime(); !info.SpotdlInstalled || info.SpotdlOutdated {
+		progress("Installing/updating spotdl (this can take a few minutes)...")
+		cmd := hiddenCmd(util.PythonExe, "-m", "pip", "install", "--upgrade",
 			"--no-warn-script-location", "--disable-pip-version-check", spotdlVersion)
 		cmd.Stdout = newProgressWriter(progress)
 		cmd.Stderr = newProgressWriter(progress)
@@ -112,11 +116,6 @@ func pipInstalled() bool {
 	return hiddenCmdCtx(ctx, util.PythonExe, "-m", "pip", "--version").Run() == nil
 }
 
-func spotdlInstalledCheck() bool {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	return hiddenCmdCtx(ctx, util.PythonExe, "-m", "spotdl", "--version").Run() == nil
-}
 
 // downloadFile streams URL to dest path with .tmp + rename for AV-safe writes.
 func downloadFile(ctx context.Context, url, dest string, progress ProgressFn) error {
