@@ -1,0 +1,61 @@
+name: Release
+
+# Builds the Windows binary and creates a GitHub Release when a version tag
+# (e.g. V3.3.0) is pushed. The release is created as a DRAFT so the changelog
+# and assets can be verified before publishing. workflow_dispatch is provided
+# for manually testing the build without tagging.
+on:
+  push:
+    tags:
+      - 'V*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Build (Windows, stripped)
+        run: wails build -platform windows/amd64 -ldflags "-s -w"
+
+      - name: Name the binary after the tag
+        shell: pwsh
+        run: Copy-Item build/bin/ytdlp-easy.exe "build/bin/ytdlp-easy-${{ github.ref_name }}.exe"
+
+      - name: Extract release notes from CHANGELOG
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $content = Get-Content CHANGELOG.md -Raw
+          $pattern = "(?ms)^## \[$([regex]::Escape($tag))\].*?(?=^## \[|\z)"
+          $match = [regex]::Match($content, $pattern)
+          $notes = if ($match.Success) { $match.Value.Trim() } else { "Release $tag" }
+          $notes | Set-Content release-notes.md -Encoding utf8
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          name: ${{ github.ref_name }}
+          body_path: release-notes.md
+          files: |
+            build/bin/ytdlp-easy-${{ github.ref_name }}.exe
+            CHANGELOG.md

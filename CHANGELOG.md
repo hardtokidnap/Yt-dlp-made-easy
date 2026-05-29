@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [V3.3.0] - 2026-05-29
+
+### Added
+- **Spotify downloads (powered by [spotDL](https://github.com/spotDL/spotify-downloader))** - the Spotify backend uses spotDL to resolve tracks and embed metadata; it is installed on demand into the app data folder
+- **Spotify playlist + liked-songs support** - sign in to Spotify once (OAuth) and download whole playlists or your liked songs. Spotify removed app-only access to playlist contents, so this requires adding the redirect URI `http://127.0.0.1:9900/` to your Spotify app; the login token is cached so you only sign in once
+- **Per-user Spotify API credentials** - paste your own client ID/secret in the Download tab to avoid spotdl's shared default credentials, which are globally rate-limited
+- **Live download progress** - the queue now shows a moving progress bar, an activity spinner, and percentage/speed/ETA that update during the download instead of only on completion
+- **Converter size estimate before converting** - the estimated output size now appears as soon as a file is loaded (including a source-based ballpark for "Auto" re-encodes), not only after starting a conversion
+
+### Changed
+- **Spotify downloads now run through the main download queue** - spotdl only matches each track to a source and embeds full metadata (tags, cover art, lyrics); the existing yt-dlp pipeline does the actual download, so Spotify tracks get the same pause/resume/cancel, cookies, retries, and history as everything else
+- spotdl pinned to 4.5.0 and older installs auto-update on next use (4.2.x crashes on Spotify's deprecated artist "genres" field when using personal API credentials)
+- Default Spotify matching source changed from Piped to YouTube Music (public Piped instances are frequently down)
+- Spotify downloads now save to the Download tab's save folder and honor the Spotify audio format/bitrate settings
+- Download ETA is now smoothed so it no longer jumps every time the network speed fluctuates
+
+### Fixed
+- Files with non-ASCII names (titles containing characters Windows disallows, such as `?`, or accented/CJK text) were reported with mangled paths because the hidden console forced a non-UTF-8 encoding, causing false "file missing" labels and broken Open File/Open Folder. yt-dlp output is now forced to UTF-8
+- Spotify rate-limit errors no longer hang the preview; they now fail fast with a clear message and guidance
+- Spotify preview now shows clear in-progress and error states in the Download tab instead of silently doing nothing
+
 ## [V3.2.0] - 2026-04-02
 
 ### Added
