@@ -92,15 +92,15 @@ The application will automatically download yt-dlp on first launch.
 
 ### Prerequisites
 
-- Go 1.23+
+- Go 1.26.9+
 - [Wails CLI](https://wails.io/docs/gettingstarted/installation)
-- Node.js 18+
+- Node.js 24+
 
 ### Setup
 
 ```bash
 # Install Wails
-go install github.com/wailsapp/wails/v2/cmd/wails@latest
+go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0
 
 # Clone repository
 git clone https://github.com/hardtokidnap/yt-dlp-easy.git
@@ -269,7 +269,7 @@ If you see "Could not copy cookie database":
 
 | Component | Technology |
 |-----------|------------|
-| Backend | Go 1.23+ |
+| Backend | Go 1.26.9+ |
 | Frontend | HTML5, JavaScript, Tailwind CSS |
 | Framework | [Wails v2](https://wails.io) |
 | Downloader | [yt-dlp](https://github.com/yt-dlp/yt-dlp) |

@@ -122,10 +122,10 @@ function renderDownloadTab() {
                          spotdl matches each track to a source URL; the normal
                          download queue does the download and shows progress. -->
                     <div id="spotify-inline" class="hidden border-t border-gray-700 pt-4 space-y-3">
-                        <div id="spotify-install-card" class="hidden p-3 rounded bg-yellow-900/20 border border-yellow-700">
+                        <div id="spotify-install-card" class="hidden p-3 rounded-sm bg-yellow-900/20 border border-yellow-700">
                             <p id="spotify-install-msg" class="text-sm text-gray-200 mb-2">Spotify runtime not installed (~80 MB, fetched once into the app data folder; system Python is untouched).</p>
                             <button id="spotify-install-btn" class="btn-secondary text-sm" onclick="window.installSpotifyRuntime()">Install Spotify runtime</button>
-                            <pre id="spotify-install-log" class="mt-2 text-xs text-gray-400 max-h-32 overflow-auto hidden bg-black/30 p-2 rounded"></pre>
+                            <pre id="spotify-install-log" class="mt-2 text-xs text-gray-400 max-h-32 overflow-auto hidden bg-black/30 p-2 rounded-sm"></pre>
                         </div>
 
                         <details id="spotify-advanced">
@@ -195,7 +195,7 @@ function renderDownloadTab() {
 
                     <div class="flex items-center space-x-4">
                         <label class="flex items-center space-x-2 cursor-pointer">
-                            <input type="checkbox" id="audio-only" class="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500 focus:ring-2">
+                            <input type="checkbox" id="audio-only" class="w-4 h-4 rounded-sm border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500 focus:ring-2">
                             <span class="text-sm">Audio Only</span>
                         </label>
                     </div>
@@ -397,8 +397,8 @@ function patchDownloadProgress(item) {
 
 function renderHistoryCard(entry) {
     const badge = entry.is_audio_only
-        ? '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-900/50 text-purple-300 border border-purple-700/50">🎵 Audio</span>'
-        : '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-900/50 text-blue-300 border border-blue-700/50">🎬 Video</span>';
+        ? '<span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-purple-900/50 text-purple-300 border border-purple-700/50">🎵 Audio</span>'
+        : '<span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-blue-900/50 text-blue-300 border border-blue-700/50">🎬 Video</span>';
 
     const isError = entry.status === 'error';
     const fileMissing = !isError && entry.file_path && entry.file_exists === false;
@@ -445,8 +445,8 @@ function renderHistoryCard(entry) {
 // Render a normal download card
 function renderDownloadCard(item) {
     const badge = item.is_audio_only
-        ? '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-900/50 text-purple-300 border border-purple-700/50">🎵 Audio</span>'
-        : '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-900/50 text-blue-300 border border-blue-700/50">🎬 Video</span>';
+        ? '<span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-purple-900/50 text-purple-300 border border-purple-700/50">🎵 Audio</span>'
+        : '<span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-blue-900/50 text-blue-300 border border-blue-700/50">🎬 Video</span>';
 
     const fileMissing = item.status === 'completed' && item.file_path && item.file_exists === false;
     const isDone = item.status === 'completed' || item.status === 'stopped';
@@ -555,7 +555,7 @@ function renderErrorCard(item) {
                 </button>
             </div>
 
-            <div class="text-sm text-gray-400 bg-gray-800/50 rounded p-2 font-mono break-all">
+            <div class="text-sm text-gray-400 bg-gray-800/50 rounded-sm p-2 font-mono break-all">
                 ${escapeHtml(item.error || 'Unknown error')}
             </div>
 
@@ -568,7 +568,7 @@ function renderErrorCard(item) {
                         ${topSuggestions.map((s, i) => `
                             <button
                                 onclick="window.applySuggestion('${itemId}', '${s.id}', '${escapeJsStr(s.action)}', '${escapeJsStr(s.action_data || '')}')"
-                                class="${i === 0 ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-600 hover:bg-gray-500'} text-white text-sm px-3 py-1.5 rounded transition-colors"
+                                class="${i === 0 ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-600 hover:bg-gray-500'} text-white text-sm px-3 py-1.5 rounded-sm transition-colors"
                                 title="${escapeHtml(s.description)}"
                             >
                                 ${escapeHtml(s.title)}
@@ -576,7 +576,7 @@ function renderErrorCard(item) {
                         `).join('')}
                         <button
                             onclick="window.retryDownload('${itemId}')"
-                            class="bg-gray-600 hover:bg-gray-500 text-white text-sm px-3 py-1.5 rounded transition-colors"
+                            class="bg-gray-600 hover:bg-gray-500 text-white text-sm px-3 py-1.5 rounded-sm transition-colors"
                         >
                             🔄 Retry
                         </button>
@@ -590,7 +590,7 @@ function renderErrorCard(item) {
                                 ${moreSuggestions.map(s => `
                                     <button
                                         onclick="window.applySuggestion('${itemId}', '${s.id}', '${escapeJsStr(s.action)}', '${escapeJsStr(s.action_data || '')}')"
-                                        class="bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm px-3 py-1.5 rounded transition-colors"
+                                        class="bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm px-3 py-1.5 rounded-sm transition-colors"
                                         title="${escapeHtml(s.description)}"
                                     >
                                         ${escapeHtml(s.title)}
@@ -604,7 +604,7 @@ function renderErrorCard(item) {
                 <div class="flex gap-2">
                     <button
                         onclick="window.retryDownload('${itemId}')"
-                        class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-3 py-1.5 rounded transition-colors"
+                        class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-3 py-1.5 rounded-sm transition-colors"
                     >
                         🔄 Retry Download
                     </button>
@@ -871,7 +871,7 @@ async function renderConvertTab() {
                             </select>
                         </div>
                     ` : ''}
-                    <div id="media-info-panel" class="hidden mt-3 p-3 bg-gray-800/50 rounded border border-gray-700">
+                    <div id="media-info-panel" class="hidden mt-3 p-3 bg-gray-800/50 rounded-sm border border-gray-700">
                         <div id="media-info-grid" class="grid grid-cols-3 gap-x-4 gap-y-2 text-sm">
                         </div>
                     </div>
@@ -902,7 +902,7 @@ async function renderConvertTab() {
                 <div class="flex flex-wrap gap-2">
                     ${presets.filter(p => p.is_platform).map(p => `
                         <button onclick="window.applyConvertPreset('${p.id}')"
-                                class="bg-blue-700 hover:bg-blue-600 text-sm px-3 py-2 rounded transition-colors font-medium"
+                                class="bg-blue-700 hover:bg-blue-600 text-sm px-3 py-2 rounded-sm transition-colors font-medium"
                                 title="${escapeHtml(p.description)}">
                             ${escapeHtml(p.name)}
                         </button>
@@ -917,7 +917,7 @@ async function renderConvertTab() {
                 <div class="flex flex-wrap gap-2">
                     ${presets.filter(p => !p.is_platform).map(p => `
                         <button onclick="window.applyConvertPreset('${p.id}')"
-                                class="bg-gray-700 hover:bg-gray-600 text-sm px-3 py-2 rounded transition-colors"
+                                class="bg-gray-700 hover:bg-gray-600 text-sm px-3 py-2 rounded-sm transition-colors"
                                 title="${escapeHtml(p.description)}">
                             ${escapeHtml(p.name)}
                         </button>
@@ -1474,7 +1474,7 @@ function renderBatchFileList() {
             <button onclick="window.clearBatchFiles()" class="text-xs text-gray-500 hover:text-gray-300">Clear All</button>
         </div>
         ${visible.map((f, i) => `
-            <div class="flex justify-between items-center text-sm bg-gray-800/50 rounded px-2 py-1">
+            <div class="flex justify-between items-center text-sm bg-gray-800/50 rounded-sm px-2 py-1">
                 <span class="truncate flex-1 text-gray-300" title="${escapeHtml(f)}">${escapeHtml(f.split(/[\\/]/).pop())}</span>
                 <button onclick="window.removeBatchFile(${i})" class="text-gray-500 hover:text-red-400 ml-2 text-xs">✕</button>
             </div>
@@ -1771,7 +1771,7 @@ function showConvertResult(status, detail) {
                <div class="flex items-center gap-2 text-red-400 font-medium">
                    <span>✕</span> Conversion failed
                </div>
-               <div class="text-sm text-gray-400 bg-gray-800/50 rounded p-2 font-mono break-all">${escapeHtml(detail)}</div>
+               <div class="text-sm text-gray-400 bg-gray-800/50 rounded-sm p-2 font-mono break-all">${escapeHtml(detail)}</div>
                <button onclick="window.resetConvertUI()" class="btn-primary w-full">
                    Try Again
                </button>
@@ -1941,7 +1941,7 @@ window.previewSpotify = async function() {
     actionBtns.forEach(b => b.disabled = true);
     const isPlaylist = /\/(playlist|collection)/.test(url);
     previewBox.classList.remove('hidden');
-    previewBox.innerHTML = `<div class="flex items-center gap-2 text-sm text-blue-300 p-2 rounded bg-blue-900/20 border border-blue-800">
+    previewBox.innerHTML = `<div class="flex items-center gap-2 text-sm text-blue-300 p-2 rounded-sm bg-blue-900/20 border border-blue-800">
         <span class="animate-spin">⏳</span>
         <span>${isPlaylist
             ? 'Reading playlist via Spotify (a browser may open to sign in; large playlists take a while)...'
@@ -1961,7 +1961,7 @@ window.previewSpotify = async function() {
     } catch (e) {
         const msg = String(e?.message || e);
         const reason = msg.split('\n')[0].slice(0, 300);
-        previewBox.innerHTML = `<div class="text-sm text-red-300 p-2 rounded bg-red-900/20 border border-red-800">
+        previewBox.innerHTML = `<div class="text-sm text-red-300 p-2 rounded-sm bg-red-900/20 border border-red-800">
             <p class="font-medium mb-1">❌ Preview failed</p>
             <p>${escapeHtml(reason)}</p>
             <p class="text-xs text-gray-400 mt-1">Full details in the Log tab (enable Verbose Logging for raw spotdl output).</p>
@@ -1982,9 +1982,9 @@ function renderSpotifyTrackPicker(tracks) {
     previewBox.classList.remove('hidden');
     previewBox.innerHTML = `
         <p class="text-sm text-gray-300 mb-2">${tracks.length} track(s) found:</p>
-        <div class="max-h-64 overflow-auto space-y-1 border border-gray-700 rounded p-2">
+        <div class="max-h-64 overflow-auto space-y-1 border border-gray-700 rounded-sm p-2">
         ${tracks.map(t => `
-            <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-800/50 px-2 py-1 rounded">
+            <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-800/50 px-2 py-1 rounded-sm">
                 <input type="checkbox" class="spotify-track-cb"
                        data-url="${escapeHtml(t.url || '')}"
                        data-title="${escapeHtml((t.artist || 'Unknown') + ' - ' + (t.title || 'Unknown'))}" checked>
@@ -2085,7 +2085,7 @@ function displayHistory() {
         const hasFile = item.file_path && item.file_exists !== false;
         const fileMissing = item.file_path && item.file_exists === false;
         return `
-        <div class="bg-gray-700 rounded p-3 flex justify-between items-center hover:bg-gray-600 transition-colors${fileMissing ? ' opacity-50' : ''}">
+        <div class="bg-gray-700 rounded-sm p-3 flex justify-between items-center hover:bg-gray-600 transition-colors${fileMissing ? ' opacity-50' : ''}">
             <div class="flex-1 min-w-0">
                 <div class="font-medium truncate${hasFile ? ' cursor-pointer hover:text-blue-400' : ''}"
                      ${hasFile ? `onclick="window.openFileInFolder('${escapeJsStr(item.file_path)}')"` : ''}>
@@ -2242,22 +2242,22 @@ async function loadSettingsContent() {
                 <div class="space-y-2">
                     <label class="flex items-center space-x-2 cursor-pointer">
                         <input type="checkbox" id="check-updates" ${s.General.CheckUpdatesOnStart ? 'checked' : ''}
-                               class="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-600">
+                               class="w-4 h-4 rounded-sm border-gray-600 bg-gray-800 text-blue-600">
                         <span class="text-sm">Check for updates on startup</span>
                     </label>
                     <label class="flex items-center space-x-2 cursor-pointer">
                         <input type="checkbox" id="clipboard-monitoring" ${s.General.ClipboardMonitoring ? 'checked' : ''}
-                               class="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-600">
+                               class="w-4 h-4 rounded-sm border-gray-600 bg-gray-800 text-blue-600">
                         <span class="text-sm">Monitor clipboard for URLs</span>
                     </label>
                     <label class="flex items-center space-x-2 cursor-pointer">
                         <input type="checkbox" id="notifications" ${s.General.NotificationsEnabled ? 'checked' : ''}
-                               class="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-600">
+                               class="w-4 h-4 rounded-sm border-gray-600 bg-gray-800 text-blue-600">
                         <span class="text-sm">Enable notifications</span>
                     </label>
                     <label class="flex items-center space-x-2 cursor-pointer">
                         <input type="checkbox" id="verbose-logging" ${s.General.VerboseLogging ? 'checked' : ''}
-                               class="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-600">
+                               class="w-4 h-4 rounded-sm border-gray-600 bg-gray-800 text-blue-600">
                         <span class="text-sm">Verbose logging</span>
                     </label>
                 </div>
@@ -2292,22 +2292,22 @@ async function loadSettingsContent() {
                 <div class="space-y-2">
                     <label class="flex items-center space-x-2 cursor-pointer">
                         <input type="checkbox" id="embed-thumbnail" ${s.Download.EmbedThumbnail ? 'checked' : ''}
-                               class="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-600">
+                               class="w-4 h-4 rounded-sm border-gray-600 bg-gray-800 text-blue-600">
                         <span class="text-sm">Embed thumbnail</span>
                     </label>
                     <label class="flex items-center space-x-2 cursor-pointer">
                         <input type="checkbox" id="embed-metadata" ${s.Download.EmbedMetadata ? 'checked' : ''}
-                               class="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-600">
+                               class="w-4 h-4 rounded-sm border-gray-600 bg-gray-800 text-blue-600">
                         <span class="text-sm">Embed metadata</span>
                     </label>
                     <label class="flex items-center space-x-2 cursor-pointer">
                         <input type="checkbox" id="embed-chapters" ${s.Download.EmbedChapters ? 'checked' : ''}
-                               class="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-600">
+                               class="w-4 h-4 rounded-sm border-gray-600 bg-gray-800 text-blue-600">
                         <span class="text-sm">Embed chapters</span>
                     </label>
                     <label class="flex items-center space-x-2 cursor-pointer">
                         <input type="checkbox" id="sponsorblock" ${s.Download.Sponsorblock ? 'checked' : ''}
-                               class="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-600">
+                               class="w-4 h-4 rounded-sm border-gray-600 bg-gray-800 text-blue-600">
                         <span class="text-sm">Remove sponsored segments (SponsorBlock)</span>
                     </label>
                 </div>
@@ -2398,25 +2398,25 @@ async function loadSettingsContent() {
                             PO Tokens help download age-restricted or blocked videos by proving you're a real user.
                         </p>
 
-                        <div class="bg-green-900/30 border border-green-700/50 rounded p-3">
+                        <div class="bg-green-900/30 border border-green-700/50 rounded-sm p-3">
                             <div class="font-medium text-green-400 mb-2">Option A: Browser Extension (Easiest)</div>
                             <p class="text-gray-400 mb-2">Install a plugin that automatically generates PO Tokens:</p>
                             <button
                                 onclick="window.openURL('https://github.com/Brainicism/bgutil-ytdlp-pot-provider')"
-                                class="bg-green-700 hover:bg-green-600 text-white text-xs px-3 py-1.5 rounded"
+                                class="bg-green-700 hover:bg-green-600 text-white text-xs px-3 py-1.5 rounded-sm"
                             >
                                 Get bgutil-ytdlp-pot-provider
                             </button>
                         </div>
 
-                        <div class="bg-gray-700/50 rounded p-3">
+                        <div class="bg-gray-700/50 rounded-sm p-3">
                             <div class="font-medium text-gray-300 mb-2">Option B: Manual Extraction</div>
                             <ol class="text-gray-400 space-y-1 list-decimal list-inside">
                                 <li>Open <span class="text-blue-400">music.youtube.com</span> in your browser</li>
-                                <li>Press <kbd class="bg-gray-600 px-1 rounded">F12</kbd> to open Developer Tools</li>
-                                <li>Go to <span class="text-yellow-400">Network</span> tab, filter by <code class="bg-gray-600 px-1 rounded">player</code></li>
-                                <li>Play any video, find the <code class="bg-gray-600 px-1 rounded">player</code> request</li>
-                                <li>In the request payload, find <code class="bg-gray-600 px-1 rounded">serviceIntegrityDimensions.poToken</code></li>
+                                <li>Press <kbd class="bg-gray-600 px-1 rounded-sm">F12</kbd> to open Developer Tools</li>
+                                <li>Go to <span class="text-yellow-400">Network</span> tab, filter by <code class="bg-gray-600 px-1 rounded-sm">player</code></li>
+                                <li>Play any video, find the <code class="bg-gray-600 px-1 rounded-sm">player</code> request</li>
+                                <li>In the request payload, find <code class="bg-gray-600 px-1 rounded-sm">serviceIntegrityDimensions.poToken</code></li>
                                 <li>Copy the token value and paste it above</li>
                             </ol>
                         </div>
@@ -2439,7 +2439,7 @@ async function loadSettingsContent() {
                 <div>
                     <label class="flex items-center space-x-2 cursor-pointer">
                         <input type="checkbox" id="use-nightly" ${s.Advanced.UseNightly ? 'checked' : ''}
-                               class="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-600">
+                               class="w-4 h-4 rounded-sm border-gray-600 bg-gray-800 text-blue-600">
                         <span class="text-sm">Use nightly builds (experimental features)</span>
                     </label>
                 </div>
@@ -2544,7 +2544,7 @@ async function loadJSRuntimeStatus() {
                     </summary>
                     <div class="mt-2 space-y-1">
                         ${info.available.map(r => `
-                            <div class="flex justify-between text-gray-400 bg-gray-800/50 rounded px-2 py-1">
+                            <div class="flex justify-between text-gray-400 bg-gray-800/50 rounded-sm px-2 py-1">
                                 <span>${escapeHtml(r.name)} ${escapeHtml(r.version)}</span>
                                 <span class="font-mono text-xs truncate max-w-xs">${escapeHtml(r.path)}</span>
                             </div>
