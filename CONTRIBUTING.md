@@ -6,14 +6,14 @@ Thanks for your interest in contributing. This is a hobby project so response ti
 
 ### Prerequisites
 
-- Go 1.21+
-- Node.js 18+
+- Go 1.26.9+
+- Node.js 24+
 - [Wails CLI](https://wails.io/docs/gettingstarted/installation)
 
 ### Setup
 
 ```bash
-go install github.com/wailsapp/wails/v2/cmd/wails@latest
+go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0
 
 git clone https://github.com/hardtokidnap/Yt-dlp-made-easy.git
 cd Yt-dlp-made-easy

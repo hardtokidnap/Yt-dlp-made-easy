@@ -1,6 +1,137 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss' source(none);
+@source '../index.html';
+@source './**/*.{js,ts,jsx,tsx}';
+
+/* Preserve the existing palette when upgrading the Tailwind compiler. */
+@theme {
+  --color-amber-200: #fde68a;
+  --color-amber-300: #fcd34d;
+  --color-amber-400: #fbbf24;
+  --color-amber-600: #d97706;
+  --color-amber-900: #78350f;
+  --color-blue-300: #93c5fd;
+  --color-blue-400: #60a5fa;
+  --color-blue-500: #3b82f6;
+  --color-blue-600: #2563eb;
+  --color-blue-700: #1d4ed8;
+  --color-blue-800: #1e40af;
+  --color-blue-900: #1e3a8a;
+  --color-gray-200: #e5e7eb;
+  --color-gray-300: #d1d5db;
+  --color-gray-400: #9ca3af;
+  --color-gray-500: #6b7280;
+  --color-gray-600: #4b5563;
+  --color-gray-700: #374151;
+  --color-gray-800: #1f2937;
+  --color-gray-900: #111827;
+  --color-green-300: #86efac;
+  --color-green-400: #4ade80;
+  --color-green-600: #16a34a;
+  --color-green-700: #15803d;
+  --color-green-900: #14532d;
+  --color-purple-300: #d8b4fe;
+  --color-purple-700: #7e22ce;
+  --color-purple-900: #581c87;
+  --color-red-300: #fca5a5;
+  --color-red-400: #f87171;
+  --color-red-600: #dc2626;
+  --color-red-700: #b91c1c;
+  --color-red-800: #991b1b;
+  --color-red-900: #7f1d1d;
+  --color-yellow-100: #fef9c3;
+  --color-yellow-300: #fde047;
+  --color-yellow-400: #facc15;
+  --color-yellow-700: #a16207;
+  --color-yellow-900: #713f12;
+}
+
+/* Keep the Tailwind 3 form, border, and button defaults. */
+@layer base {
+  input[type="range"] {
+    background-color: white;
+  }
+
+  button,
+  [role="button"] {
+    cursor: pointer;
+  }
+
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
+
+/* Keep sibling spacing stable when later controls are hidden. */
+@utility space-y-* {
+  > :not(:last-child) {
+    margin-block: 0;
+  }
+
+  > :not([hidden]) ~ :not([hidden]) {
+    margin-block-start: --spacing(--value(number));
+    margin-block-end: 0;
+  }
+}
+
+@utility tab-button {
+  @apply px-6 py-3 text-sm font-medium transition-colors duration-200 border-b-2;
+}
+
+@utility tab-button-active {
+  @apply border-blue-500 text-blue-400;
+}
+
+@utility tab-button-inactive {
+  @apply border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-600;
+}
+
+@utility input-field {
+  @apply w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500 transition-colors;
+}
+
+@utility btn-primary {
+  @apply px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 font-medium disabled:bg-gray-700 disabled:cursor-not-allowed;
+}
+
+@utility btn-secondary {
+  @apply px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors duration-200 font-medium disabled:bg-gray-800 disabled:cursor-not-allowed;
+}
+
+@utility btn-danger {
+  @apply px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors duration-200 font-medium;
+}
+
+@utility card {
+  @apply bg-gray-800 rounded-lg p-4 border border-gray-700;
+}
+
+@utility select-field {
+  @apply px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-hidden focus:border-blue-500 transition-colors cursor-pointer;
+}
+
+@utility progress-bar {
+  @apply h-2 bg-gray-700 rounded-full overflow-hidden;
+}
+
+@utility progress-bar-fill {
+  @apply h-full bg-blue-600 transition-all duration-300;
+}
+
+@utility log-output {
+  @apply bg-black text-green-400 p-4 rounded-lg font-mono text-sm h-full overflow-y-auto;
+}
+
+@utility drop-zone {
+  @apply border-2 border-dashed border-transparent transition-colors duration-200;
+
+  &.wails-drop-target-active {
+    @apply border-blue-500 bg-blue-500/10;
+  }
+}
 
 @layer base {
   html {
@@ -9,63 +140,5 @@
 
   body {
     @apply m-0 font-sans;
-  }
-}
-
-@layer components {
-  .tab-button {
-    @apply px-6 py-3 text-sm font-medium transition-colors duration-200 border-b-2;
-  }
-
-  .tab-button-active {
-    @apply border-blue-500 text-blue-400;
-  }
-
-  .tab-button-inactive {
-    @apply border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-600;
-  }
-
-  .input-field {
-    @apply w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors;
-  }
-
-  .btn-primary {
-    @apply px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 font-medium disabled:bg-gray-700 disabled:cursor-not-allowed;
-  }
-
-  .btn-secondary {
-    @apply px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors duration-200 font-medium disabled:bg-gray-800 disabled:cursor-not-allowed;
-  }
-
-  .btn-danger {
-    @apply px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors duration-200 font-medium;
-  }
-
-  .card {
-    @apply bg-gray-800 rounded-lg p-4 border border-gray-700;
-  }
-
-  .select-field {
-    @apply px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors cursor-pointer;
-  }
-
-  .progress-bar {
-    @apply h-2 bg-gray-700 rounded-full overflow-hidden;
-  }
-
-  .progress-bar-fill {
-    @apply h-full bg-blue-600 transition-all duration-300;
-  }
-
-  .log-output {
-    @apply bg-black text-green-400 p-4 rounded-lg font-mono text-sm h-full overflow-y-auto;
-  }
-
-  .drop-zone {
-    @apply border-2 border-dashed border-transparent transition-colors duration-200;
-  }
-
-  .drop-zone.wails-drop-target-active {
-    @apply border-blue-500 bg-blue-500/10;
   }
 }
